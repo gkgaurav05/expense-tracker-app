@@ -1,0 +1,142 @@
+import { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { Plus, Trash2, Receipt, Filter } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { api, formatINR } from '@/lib/api';
+import { toast } from 'sonner';
+import AddExpenseModal from '@/components/AddExpenseModal';
+
+const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
+
+export default function Expenses() {
+  const [expenses, setExpenses] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [filter, setFilter] = useState('all');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const params = filter !== 'all' ? { category: filter } : {};
+      const [expRes, catRes] = await Promise.all([
+        api.getExpenses(params),
+        api.getCategories(),
+      ]);
+      setExpenses(expRes.data);
+      setCategories(catRes.data);
+    } catch (e) {
+      console.error('Fetch error', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleDelete = async (id) => {
+    try {
+      await api.deleteExpense(id);
+      setExpenses((prev) => prev.filter((e) => e.id !== id));
+      toast.success('Expense deleted');
+    } catch {
+      toast.error('Failed to delete');
+    }
+  };
+
+  const catColorMap = {};
+  categories.forEach((c) => { catColorMap[c.name] = c.color; });
+
+  return (
+    <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8">
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-['General_Sans']">Expenses</h1>
+          <p className="text-sm text-[#A1A1AA] mt-1">{expenses.length} transactions</p>
+        </div>
+        <button
+          data-testid="add-expense-btn"
+          onClick={() => setModalOpen(true)}
+          className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-6 h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
+        >
+          <Plus size={18} strokeWidth={2.5} /> Add Expense
+        </button>
+      </motion.div>
+
+      {/* Filter */}
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.1 }} className="flex items-center gap-3">
+        <Filter size={16} className="text-[#A1A1AA]" />
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger data-testid="expense-filter-select" className="w-48 pill-input h-10 text-sm">
+            <SelectValue placeholder="All Categories" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#171717] border-white/10 rounded-2xl text-white">
+            <SelectItem value="all" className="focus:bg-white/10 focus:text-white">All Categories</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c.name} value={c.name} className="focus:bg-white/10 focus:text-white">
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full" style={{ background: c.color }} />
+                  {c.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </motion.div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="w-8 h-8 rounded-full border-2 border-[#FDE047] border-t-transparent animate-spin" />
+        </div>
+      ) : expenses.length === 0 ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card text-center py-16">
+          <Receipt size={40} className="mx-auto text-[#A1A1AA] mb-4" />
+          <p className="text-[#A1A1AA]">No expenses found. Add your first expense!</p>
+        </motion.div>
+      ) : (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }} className="space-y-3" data-testid="expense-list">
+          {expenses.map((exp, i) => (
+            <motion.div
+              key={exp.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...spring, delay: i * 0.03 }}
+              data-testid={`expense-item-${exp.id}`}
+              className="glass-card-sm flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${catColorMap[exp.category] || '#FDE047'}20` }}>
+                  <span className="w-3 h-3 rounded-full" style={{ background: catColorMap[exp.category] || '#FDE047' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">{exp.category}</p>
+                  <p className="text-xs text-[#A1A1AA]">
+                    {exp.description ? `${exp.description} · ` : ''}{exp.date}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <p className="text-base font-bold text-white">{formatINR(exp.amount)}</p>
+                <button
+                  data-testid={`delete-expense-${exp.id}`}
+                  onClick={() => handleDelete(exp.id)}
+                  className="opacity-0 group-hover:opacity-100 w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
+
+      <AddExpenseModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        categories={categories}
+        onSuccess={fetchData}
+      />
+    </div>
+  );
+}
