@@ -148,7 +148,7 @@ export default function Budgets() {
                     value={budgetInputs[cat.name] || ''}
                     onChange={(e) => setBudgetInputs((p) => ({ ...p, [cat.name]: e.target.value }))}
                     placeholder="Set budget"
-                    className="pill-input w-full pl-10 h-10 text-sm"
+                    className="w-full rounded-full bg-white/[0.05] border border-white/[0.1] pl-12 pr-4 h-10 text-white text-sm outline-none focus:ring-2 focus:ring-[#FDE047] focus:border-transparent transition-all placeholder:text-[#A1A1AA]/50"
                   />
                 </div>
                 <button

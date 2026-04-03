@@ -69,7 +69,7 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#0A0A0A]/95 backdrop-blur-3xl border border-white/[0.08] rounded-[32px] p-8 max-w-md text-white">
+      <DialogContent className="bg-[#0A0A0A]/95 backdrop-blur-3xl border border-white/[0.08] rounded-[32px] p-8 max-w-md text-white z-[100]">
         <DialogHeader>
           <DialogTitle className="font-['General_Sans'] text-2xl font-bold tracking-tight">
             Add Expense
@@ -128,11 +128,11 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
                 <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger
                     data-testid="expense-category-select"
-                    className="pill-input flex-1 h-12"
+                    className="flex-1 h-12 rounded-full bg-white/[0.05] border border-white/[0.1] px-6 text-white text-sm focus:ring-2 focus:ring-[#FDE047]"
                   >
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#171717] border-white/10 rounded-2xl text-white">
+                  <SelectContent className="bg-[#171717] border-white/10 rounded-2xl text-white z-[200]">
                     {categories.map((c) => (
                       <SelectItem key={c.name} value={c.name} className="focus:bg-white/10 focus:text-white">
                         <span className="flex items-center gap-2">
@@ -181,7 +181,7 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
                   <CalendarIcon size={16} className="text-[#A1A1AA]" />
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 bg-[#171717] border-white/10 rounded-2xl" align="start">
+              <PopoverContent className="w-auto p-0 bg-[#171717] border-white/10 rounded-2xl z-[200]" align="start">
                 <Calendar
                   mode="single"
                   selected={date}
