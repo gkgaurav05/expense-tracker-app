@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Trash2, Receipt, Filter } from 'lucide-react';
+import { Plus, Trash2, Receipt, Filter, Pencil, Download } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ export default function Expenses() {
   const [categories, setCategories] = useState([]);
   const [filter, setFilter] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -46,6 +47,29 @@ export default function Expenses() {
   const catColorMap = {};
   categories.forEach((c) => { catColorMap[c.name] = c.color; });
 
+  const handleEdit = (expense) => {
+    setEditingExpense(expense);
+    setModalOpen(true);
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      const params = filter !== 'all' ? { category: filter } : {};
+      const { data } = await api.exportCSV(params);
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'expenses.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('CSV exported successfully');
+    } catch {
+      toast.error('Failed to export CSV');
+    }
+  };
+
   return (
     <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8">
       {/* Header */}
@@ -54,13 +78,22 @@ export default function Expenses() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-['General_Sans']">Expenses</h1>
           <p className="text-sm text-[#A1A1AA] mt-1">{expenses.length} transactions</p>
         </div>
-        <button
-          data-testid="add-expense-btn"
-          onClick={() => setModalOpen(true)}
-          className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-6 h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
-        >
-          <Plus size={18} strokeWidth={2.5} /> Add Expense
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            data-testid="export-csv-btn"
+            onClick={handleExportCSV}
+            className="rounded-full bg-white/[0.05] border border-white/[0.08] px-5 h-12 flex items-center gap-2 text-sm text-[#A1A1AA] hover:bg-white/[0.1] transition-all"
+          >
+            <Download size={16} /> Export CSV
+          </button>
+          <button
+            data-testid="add-expense-btn"
+            onClick={() => { setEditingExpense(null); setModalOpen(true); }}
+            className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-6 h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
+          >
+            <Plus size={18} strokeWidth={2.5} /> Add Expense
+          </button>
+        </div>
       </motion.div>
 
       {/* Filter */}
@@ -116,8 +149,15 @@ export default function Expenses() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <p className="text-base font-bold text-white">{formatINR(exp.amount)}</p>
+                <button
+                  data-testid={`edit-expense-${exp.id}`}
+                  onClick={() => handleEdit(exp)}
+                  className="opacity-0 group-hover:opacity-100 w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
+                >
+                  <Pencil size={14} />
+                </button>
                 <button
                   data-testid={`delete-expense-${exp.id}`}
                   onClick={() => handleDelete(exp.id)}
@@ -133,9 +173,10 @@ export default function Expenses() {
 
       <AddExpenseModal
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={(open) => { setModalOpen(open); if (!open) setEditingExpense(null); }}
         categories={categories}
         onSuccess={fetchData}
+        expense={editingExpense}
       />
     </div>
   );

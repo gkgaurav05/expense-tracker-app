@@ -15,6 +15,9 @@ export const api = {
   createOrUpdateBudget: (data) => axios.post(`${API}/budgets`, data),
   deleteBudget: (id) => axios.delete(`${API}/budgets/${id}`),
   getInsights: () => axios.post(`${API}/insights`),
+  getAlerts: () => axios.get(`${API}/alerts`),
+  getMonthlyReport: (month) => axios.get(`${API}/report/monthly`, { params: { month } }),
+  exportCSV: (params) => axios.get(`${API}/export/csv`, { params, responseType: 'blob' }),
 };
 
 export const formatINR = (value) =>

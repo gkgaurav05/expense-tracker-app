@@ -4,6 +4,7 @@ import { TrendingUp, Wallet, PiggyBank, Receipt, ArrowRight } from 'lucide-react
 import { useNavigate } from 'react-router-dom';
 import { api, formatINR } from '@/lib/api';
 import { DailySpendingChart, CategoryPieChart } from '@/components/SpendingCharts';
+import BudgetAlerts from '@/components/BudgetAlerts';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
 
@@ -76,6 +77,9 @@ export default function Dashboard() {
         <StatCard icon={PiggyBank} label="Budget Left" value={formatINR(s.budget_remaining)} delay={0.15} testId="budget-remaining-card" />
         <StatCard icon={Wallet} label="Total Budget" value={formatINR(s.total_budget)} delay={0.2} testId="total-budget-card" />
       </div>
+
+      {/* Budget Alerts */}
+      <BudgetAlerts />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">

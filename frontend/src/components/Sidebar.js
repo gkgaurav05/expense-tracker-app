@@ -1,11 +1,13 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Receipt, PiggyBank, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Receipt, PiggyBank, Sparkles, BarChart3, Share2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/budgets', icon: PiggyBank, label: 'Budgets' },
+  { to: '/summary', icon: BarChart3, label: 'Summary' },
+  { to: '/reports', icon: Share2, label: 'Reports' },
   { to: '/insights', icon: Sparkles, label: 'Insights' },
 ];
 

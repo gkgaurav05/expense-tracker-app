@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
-export default function AddExpenseModal({ open, onOpenChange, categories, onSuccess }) {
+export default function AddExpenseModal({ open, onOpenChange, categories, onSuccess, expense }) {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -20,14 +20,21 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
 
   useEffect(() => {
     if (open) {
-      setAmount('');
-      setCategory('');
-      setDescription('');
-      setDate(new Date());
+      if (expense) {
+        setAmount(String(expense.amount));
+        setCategory(expense.category);
+        setDescription(expense.description || '');
+        setDate(new Date(expense.date + 'T00:00:00'));
+      } else {
+        setAmount('');
+        setCategory('');
+        setDescription('');
+        setDate(new Date());
+      }
       setShowNewCat(false);
       setNewCatName('');
     }
-  }, [open]);
+  }, [open, expense]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,17 +44,23 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
     }
     setLoading(true);
     try {
-      await api.createExpense({
+      const payload = {
         amount: parseFloat(amount),
         category,
         description,
         date: format(date, 'yyyy-MM-dd'),
-      });
-      toast.success('Expense added');
+      };
+      if (expense) {
+        await api.updateExpense(expense.id, payload);
+        toast.success('Expense updated');
+      } else {
+        await api.createExpense(payload);
+        toast.success('Expense added');
+      }
       onSuccess?.();
       onOpenChange(false);
     } catch {
-      toast.error('Failed to add expense');
+      toast.error(expense ? 'Failed to update' : 'Failed to add expense');
     } finally {
       setLoading(false);
     }
@@ -72,7 +85,7 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
       <DialogContent className="bg-[#0A0A0A]/95 backdrop-blur-3xl border border-white/[0.08] rounded-[32px] p-8 max-w-md text-white z-[100]">
         <DialogHeader>
           <DialogTitle className="font-['General_Sans'] text-2xl font-bold tracking-tight">
-            Add Expense
+            {expense ? 'Edit Expense' : 'Add Expense'}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5 mt-4">
@@ -199,7 +212,7 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
             disabled={loading}
             className="w-full rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold h-12 hover:bg-[#FDE047]/90 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 text-sm tracking-wide uppercase"
           >
-            {loading ? 'Adding...' : 'Add Expense'}
+            {loading ? (expense ? 'Updating...' : 'Adding...') : (expense ? 'Update Expense' : 'Add Expense')}
           </button>
         </form>
       </DialogContent>

@@ -289,6 +289,91 @@ class ExpenseTrackerAPITester:
             
         return insights
 
+    def test_csv_export(self):
+        """Test CSV export endpoint"""
+        print("\n" + "="*50)
+        print("TESTING CSV EXPORT")
+        print("="*50)
+        
+        # Test CSV export without date filters
+        success, response = self.run_test(
+            "Export CSV (all data)",
+            "GET",
+            "export/csv",
+            200
+        )
+        
+        # Test CSV export with date filters
+        today = datetime.now().strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        success, response = self.run_test(
+            "Export CSV (with date range)",
+            "GET",
+            "export/csv",
+            200,
+            params={"start_date": yesterday, "end_date": today}
+        )
+        
+        return response
+
+    def test_budget_alerts(self):
+        """Test budget alerts endpoint"""
+        print("\n" + "="*50)
+        print("TESTING BUDGET ALERTS")
+        print("="*50)
+        
+        success, alerts = self.run_test(
+            "Get Budget Alerts",
+            "GET",
+            "alerts",
+            200
+        )
+        
+        if success:
+            print(f"   Found {len(alerts)} alerts")
+            for alert in alerts:
+                print(f"   Alert: {alert.get('category')} - {alert.get('status')} ({alert.get('percentage')}%)")
+                
+        return alerts
+
+    def test_monthly_report(self):
+        """Test monthly report endpoint"""
+        print("\n" + "="*50)
+        print("TESTING MONTHLY REPORT")
+        print("="*50)
+        
+        # Test current month report
+        success, report = self.run_test(
+            "Get Monthly Report (current month)",
+            "GET",
+            "report/monthly",
+            200
+        )
+        
+        if success:
+            expected_fields = [
+                'month', 'total_spent', 'total_budget', 'expense_count',
+                'avg_daily', 'top_category', 'category_breakdown', 
+                'daily_spending', 'top_expenses', 'days_tracked'
+            ]
+            for field in expected_fields:
+                if field in report:
+                    print(f"   ✅ {field}: {report[field]}")
+                else:
+                    print(f"   ❌ Missing field: {field}")
+        
+        # Test specific month report
+        success, report = self.run_test(
+            "Get Monthly Report (specific month)",
+            "GET",
+            "report/monthly",
+            200,
+            params={"month": "2026-04"}
+        )
+        
+        return report
+
     def test_root_endpoint(self):
         """Test root API endpoint"""
         print("\n" + "="*50)
@@ -317,6 +402,11 @@ def main():
     tester.test_budgets(categories)
     tester.test_dashboard_summary()
     tester.test_insights()
+    
+    # Test new features
+    tester.test_csv_export()
+    tester.test_budget_alerts()
+    tester.test_monthly_report()
     
     # Print final results
     print("\n" + "="*60)
