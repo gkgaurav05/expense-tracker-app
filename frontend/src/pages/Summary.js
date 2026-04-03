@@ -16,9 +16,11 @@ export default function Summary() {
 
   const monthStr = format(currentDate, 'yyyy-MM');
   const monthLabel = format(currentDate, 'MMMM yyyy');
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`;
+  const weekStartDate = startOfWeek(currentDate, { weekStartsOn: 1 });
+  const weekEndDate = endOfWeek(currentDate, { weekStartsOn: 1 });
+  const weekStartStr = format(weekStartDate, 'yyyy-MM-dd');
+  const weekEndStr = format(weekEndDate, 'yyyy-MM-dd');
+  const weekLabel = `${format(weekStartDate, 'MMM d')} - ${format(weekEndDate, 'MMM d, yyyy')}`;
 
   const fetchMonthly = useCallback(async () => {
     setLoading(true);
@@ -35,17 +37,16 @@ export default function Summary() {
   const fetchWeekly = useCallback(async () => {
     setLoading(true);
     try {
-      const start = format(weekStart, 'yyyy-MM-dd');
-      const end = format(weekEnd, 'yyyy-MM-dd');
-      const { data: expenses } = await api.getExpenses({ start_date: start, end_date: end });
+      const { data: expenses } = await api.getExpenses({ start_date: weekStartStr, end_date: weekEndStr });
       const total = expenses.reduce((s, e) => s + e.amount, 0);
       const catMap = {};
       expenses.forEach((e) => { catMap[e.category] = (catMap[e.category] || 0) + e.amount; });
       const dailyMap = {};
       expenses.forEach((e) => { dailyMap[e.date] = (dailyMap[e.date] || 0) + e.amount; });
       const dailySpending = [];
+      const ws = new Date(weekStartStr + 'T00:00:00');
       for (let i = 0; i < 7; i++) {
-        const d = new Date(weekStart);
+        const d = new Date(ws);
         d.setDate(d.getDate() + i);
         const ds = format(d, 'yyyy-MM-dd');
         dailySpending.push({ date: ds, label: format(d, 'EEE'), amount: dailyMap[ds] || 0 });
@@ -69,7 +70,7 @@ export default function Summary() {
     } finally {
       setLoading(false);
     }
-  }, [weekStart, weekEnd]);
+  }, [weekStartStr, weekEndStr]);
 
   useEffect(() => {
     if (tab === 'monthly') fetchMonthly();

@@ -15,7 +15,7 @@ export function DailySpendingChart({ data, barSize = 28 }) {
   if (!data?.length) return null;
   return (
     <div data-testid="daily-spending-chart" className="w-full h-[220px]">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%">
         <BarChart data={data} barSize={barSize}>
           <XAxis
             dataKey="label"
