@@ -10,7 +10,8 @@ from typing import List, Optional
 import csv
 import io
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date as date_cls, timezone, timedelta
+import calendar
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 
@@ -43,6 +44,7 @@ class ExpenseCreate(BaseModel):
 class BudgetCreate(BaseModel):
     category: str
     amount: float
+    month: Optional[str] = None  # YYYY-MM format; defaults to current month
 
 # ── Default Categories ──────────────────────────────────────────────
 
@@ -54,6 +56,17 @@ DEFAULT_CATEGORIES = [
     {"name": "Shopping", "icon": "shopping-bag", "color": "#FFEAA7"},
     {"name": "Health", "icon": "heart-pulse", "color": "#DDA0DD"},
 ]
+
+@app.on_event("startup")
+async def migrate_budgets_add_month():
+    """Add month field to any existing budgets that lack it."""
+    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    result = await db.budgets.update_many(
+        {"month": {"$exists": False}},
+        {"$set": {"month": current_month}},
+    )
+    if result.modified_count > 0:
+        logger.info(f"Migrated {result.modified_count} budgets to month {current_month}")
 
 @app.on_event("startup")
 async def seed_default_categories():
@@ -161,15 +174,17 @@ async def delete_expense(expense_id: str):
 
 @api_router.post("/budgets")
 async def create_or_update_budget(data: BudgetCreate):
-    existing = await db.budgets.find_one({"category": data.category}, {"_id": 0})
+    month = data.month or datetime.now(timezone.utc).strftime("%Y-%m")
+    existing = await db.budgets.find_one({"category": data.category, "month": month}, {"_id": 0})
     if existing:
-        await db.budgets.update_one({"category": data.category}, {"$set": {"amount": data.amount}})
-        updated = await db.budgets.find_one({"category": data.category}, {"_id": 0})
+        await db.budgets.update_one({"category": data.category, "month": month}, {"$set": {"amount": data.amount}})
+        updated = await db.budgets.find_one({"category": data.category, "month": month}, {"_id": 0})
         return updated
     doc = {
         "id": str(uuid.uuid4()),
         "category": data.category,
         "amount": data.amount,
+        "month": month,
         "period": "monthly",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -178,8 +193,11 @@ async def create_or_update_budget(data: BudgetCreate):
     return result
 
 @api_router.get("/budgets")
-async def get_budgets():
-    budgets = await db.budgets.find({}, {"_id": 0}).to_list(100)
+async def get_budgets(month: Optional[str] = None):
+    query = {}
+    if month:
+        query["month"] = month
+    budgets = await db.budgets.find(query, {"_id": 0}).to_list(100)
     return budgets
 
 @api_router.delete("/budgets/{budget_id}")
@@ -192,35 +210,59 @@ async def delete_budget(budget_id: str):
 # ── Dashboard Summary ───────────────────────────────────────────────
 
 @api_router.get("/dashboard/summary")
-async def get_dashboard_summary():
+async def get_dashboard_summary(month: Optional[str] = None):
     now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1).strftime("%Y-%m-%d")
-    today = now.strftime("%Y-%m-%d")
-    week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+
+    if month:
+        try:
+            year, m = month.split("-")
+            year, m = int(year), int(m)
+        except ValueError:
+            raise HTTPException(400, "Invalid month format. Use YYYY-MM")
+        month_start = f"{year}-{m:02d}-01"
+        if m == 12:
+            month_end = f"{year + 1}-01-01"
+        else:
+            month_end = f"{year}-{m + 1:02d}-01"
+        target_month = month
+    else:
+        year, m = now.year, now.month
+        month_start = now.replace(day=1).strftime("%Y-%m-%d")
+        month_end = now.strftime("%Y-%m-%d")
+        target_month = now.strftime("%Y-%m")
 
     monthly_expenses = await db.expenses.find(
-        {"date": {"$gte": month_start, "$lte": today}}, {"_id": 0}
+        {"date": {"$gte": month_start, "$lt": month_end}} if month else {"date": {"$gte": month_start, "$lte": month_end}},
+        {"_id": 0}
     ).to_list(10000)
 
     total_month = sum(e["amount"] for e in monthly_expenses)
-    weekly_expenses = [e for e in monthly_expenses if e["date"] >= week_start]
-    total_week = sum(e["amount"] for e in weekly_expenses)
+
+    # Weekly spending only meaningful for current month
+    if not month or target_month == now.strftime("%Y-%m"):
+        week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+        weekly_expenses = [e for e in monthly_expenses if e["date"] >= week_start]
+        total_week = sum(e["amount"] for e in weekly_expenses)
+    else:
+        total_week = 0
 
     category_totals = {}
     for e in monthly_expenses:
         cat = e["category"]
         category_totals[cat] = category_totals.get(cat, 0) + e["amount"]
 
-    budgets = await db.budgets.find({}, {"_id": 0}).to_list(100)
+    budgets = await db.budgets.find({"month": target_month}, {"_id": 0}).to_list(100)
     total_budget = sum(b["amount"] for b in budgets)
     budget_map = {b["category"]: b["amount"] for b in budgets}
 
+    # Daily spending chart: show all days of the month
+    days_in_month = calendar.monthrange(year, m)[1]
     daily_spending = []
-    for i in range(6, -1, -1):
-        day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-        day_label = (now - timedelta(days=i)).strftime("%a")
-        day_total = sum(e["amount"] for e in monthly_expenses if e["date"] == day)
-        daily_spending.append({"date": day, "label": day_label, "amount": day_total})
+    for d in range(1, days_in_month + 1):
+        day_str = f"{year}-{m:02d}-{d:02d}"
+        day_label = date_cls(year, m, d).strftime("%d")
+        day_total = sum(e["amount"] for e in monthly_expenses if e["date"] == day_str)
+        daily_spending.append({"date": day_str, "label": day_label, "amount": day_total})
 
     categories = await db.categories.find({}, {"_id": 0}).to_list(100)
     cat_colors = {c["name"]: c["color"] for c in categories}
@@ -230,9 +272,13 @@ async def get_dashboard_summary():
         for k, v in sorted(category_totals.items(), key=lambda x: -x[1])
     ]
 
-    recent = await db.expenses.find({}, {"_id": 0}).sort("created_at", -1).to_list(5)
+    recent = await db.expenses.find(
+        {"date": {"$gte": month_start, "$lt": month_end}} if month else {"date": {"$gte": month_start, "$lte": month_end}},
+        {"_id": 0}
+    ).sort("date", -1).to_list(5)
 
     return {
+        "month": target_month,
         "total_month": total_month,
         "total_week": total_week,
         "total_budget": total_budget,
@@ -248,7 +294,8 @@ async def get_dashboard_summary():
 @api_router.post("/insights")
 async def get_ai_insights():
     expenses = await db.expenses.find({}, {"_id": 0}).sort("date", -1).to_list(100)
-    budgets = await db.budgets.find({}, {"_id": 0}).to_list(100)
+    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    budgets = await db.budgets.find({"month": current_month}, {"_id": 0}).to_list(100)
 
     if not expenses:
         return {"insights": "Add some expenses first to get AI-powered insights about your spending patterns!"}
@@ -321,17 +368,32 @@ async def export_expenses_csv(start_date: Optional[str] = None, end_date: Option
 # ── Budget Alerts ────────────────────────────────────────────────────
 
 @api_router.get("/alerts")
-async def get_budget_alerts():
+async def get_budget_alerts(month: Optional[str] = None):
     now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1).strftime("%Y-%m-%d")
-    today = now.strftime("%Y-%m-%d")
+    if month:
+        try:
+            year, m = month.split("-")
+            year, m = int(year), int(m)
+        except ValueError:
+            raise HTTPException(400, "Invalid month format. Use YYYY-MM")
+        month_start = f"{year}-{m:02d}-01"
+        if m == 12:
+            month_end = f"{year + 1}-01-01"
+        else:
+            month_end = f"{year}-{m + 1:02d}-01"
+        target_month = month
+    else:
+        month_start = now.replace(day=1).strftime("%Y-%m-%d")
+        month_end = now.strftime("%Y-%m-%d")
+        target_month = now.strftime("%Y-%m")
     expenses = await db.expenses.find(
-        {"date": {"$gte": month_start, "$lte": today}}, {"_id": 0}
+        {"date": {"$gte": month_start, "$lt": month_end}} if month else {"date": {"$gte": month_start, "$lte": month_end}},
+        {"_id": 0}
     ).to_list(10000)
     category_totals = {}
     for e in expenses:
         category_totals[e["category"]] = category_totals.get(e["category"], 0) + e["amount"]
-    budgets = await db.budgets.find({}, {"_id": 0}).to_list(100)
+    budgets = await db.budgets.find({"month": target_month}, {"_id": 0}).to_list(100)
     categories = await db.categories.find({}, {"_id": 0}).to_list(100)
     cat_colors = {c["name"]: c["color"] for c in categories}
     alerts = []
@@ -381,7 +443,8 @@ async def get_monthly_report(month: Optional[str] = None):
         category_totals[e["category"]] = category_totals.get(e["category"], 0) + e["amount"]
     categories = await db.categories.find({}, {"_id": 0}).to_list(100)
     cat_colors = {c["name"]: c["color"] for c in categories}
-    budgets = await db.budgets.find({}, {"_id": 0}).to_list(100)
+    report_month = month or f"{year}-{m:02d}"
+    budgets = await db.budgets.find({"month": report_month}, {"_id": 0}).to_list(100)
     budget_map = {b["category"]: b["amount"] for b in budgets}
     total_budget = sum(b["amount"] for b in budgets)
     daily = {}

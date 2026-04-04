@@ -2,19 +2,20 @@
 
 **Smart Expense Tracker with AI-Powered Insights**
 
-A modern, full-stack expense tracking application built for students and professionals who want to quickly log, categorize, and understand their spending. Features a striking Hyper-Saturated Fluid UI with glassmorphic design elements, real-time budget alerts, and AI-driven spending analysis powered by Google Gemini.
+A modern, full-stack expense tracking application built for students and professionals who want to quickly log, categorize, and understand their spending. Features a striking Hyper-Saturated Fluid UI with glassmorphic design elements, real-time budget alerts, and AI-driven spending analysis powered by OpenAI.
 
 ---
 
 ## Features
 
-- **Expense Management** -- Add, edit, delete expenses with category, description, and date picker (future dates blocked)
+- **Expense Management** -- Add, edit, delete expenses with category, description, and date picker (future dates blocked). Month navigator to browse expenses by month with inline summary stats (total spent, count). Category filter works within the selected month.
 - **Smart Categories** -- 6 pre-built categories (Food & Dining, Transport, Entertainment, Bills & Utilities, Shopping, Health) + custom categories
-- **Budget Tracking** -- Set monthly budgets per category with visual progress bars
-- **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets
-- **Dashboard** -- Overview with total monthly spend, weekly spend, budget remaining, daily spending bar chart, category pie chart, and recent expenses
+- **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars and month navigation
+- **Budget History** -- Navigate to any previous month to view or set budgets; each month maintains its own budget configuration
+- **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets, scoped to the selected month across Dashboard and Budgets pages
+- **Dashboard** -- Month-navigable overview with total monthly spend, weekly spend (current month) or avg/day (past months), budget remaining, daily spending bar chart, category pie chart, budget alerts, and recent expenses -- all scoped to the selected month
 - **Weekly/Monthly Summary** -- Period navigation with trend charts and category breakdown with percentage bars
-- **AI Insights** -- Gemini-powered spending analysis with personalized savings tips
+- **AI Insights** -- OpenAI-powered spending analysis with personalized savings tips
 - **Shareable Reports** -- Monthly report cards with share via Web Share API, copy link, or CSV download
 - **CSV Export** -- Download all expense data as CSV
 - **INR Currency** -- Formatted in Indian Rupees throughout
@@ -25,10 +26,10 @@ A modern, full-stack expense tracking application built for students and profess
 
 | Layer      | Technology                                                        |
 | ---------- | ----------------------------------------------------------------- |
-| Frontend   | React 18, Tailwind CSS, shadcn/ui, Recharts, Framer Motion       |
+| Frontend   | React 19, Tailwind CSS, shadcn/ui, Recharts, Framer Motion       |
 | Backend    | FastAPI (Python), Motor (async MongoDB driver)                    |
 | Database   | MongoDB 7                                                         |
-| AI         | Google Gemini via emergentintegrations                            |
+| AI         | OpenAI GPT-4o-mini                                                |
 | Deployment | Docker, Docker Compose, Nginx (production reverse proxy)          |
 
 ---
@@ -37,7 +38,7 @@ A modern, full-stack expense tracking application built for students and profess
 
 - [Docker](https://docs.docker.com/get-docker/) (v20.10+)
 - [Docker Compose](https://docs.docker.com/compose/install/) (v2.0+)
-- An **Emergent LLM Key** for AI insights (optional -- app works without it, AI insights will be unavailable)
+- An **OpenAI API Key** for AI insights (optional -- app works without it, AI insights will be unavailable)
 
 ---
 
@@ -57,13 +58,13 @@ cd spendrax
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` and add your Emergent LLM key (optional):
+Edit `backend/.env` and add your OpenAI API key (optional):
 
 ```env
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=spendrax_db
 CORS_ORIGINS=*
-EMERGENT_LLM_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
 ```
 
 > **Note:** `MONGO_URL` is automatically overridden by Docker Compose to `mongodb://mongo:27017`. The `.env` value is a fallback for non-Docker environments.
@@ -137,7 +138,7 @@ docker compose down -v
 | `MONGO_URL`        | Yes      | MongoDB connection string                      |
 | `DB_NAME`          | Yes      | Database name (default: `spendrax_db`)         |
 | `CORS_ORIGINS`     | Yes      | Allowed CORS origins (`*` for all)             |
-| `EMERGENT_LLM_KEY` | No       | Emergent universal key for Gemini AI insights  |
+| `OPENAI_API_KEY`   | No       | OpenAI API key for AI-powered insights         |
 
 ### Frontend (`frontend/.env`)
 
@@ -219,19 +220,19 @@ All endpoints are prefixed with `/api`.
 
 ### Budgets
 
-| Method   | Endpoint                | Description                        |
-| -------- | ----------------------- | ---------------------------------- |
-| `GET`    | `/api/budgets`          | List all budgets                   |
-| `POST`   | `/api/budgets`          | Create or update budget            |
-| `DELETE` | `/api/budgets/{id}`     | Delete budget                      |
+| Method   | Endpoint                | Description                                          |
+| -------- | ----------------------- | ---------------------------------------------------- |
+| `GET`    | `/api/budgets`          | List budgets (filterable by `?month=YYYY-MM`)        |
+| `POST`   | `/api/budgets`          | Create or update budget (with `month` field)         |
+| `DELETE` | `/api/budgets/{id}`     | Delete budget                                        |
 
 ### Analytics & Reports
 
 | Method   | Endpoint                  | Description                                |
 | -------- | ------------------------- | ------------------------------------------ |
-| `GET`    | `/api/dashboard/summary`  | Dashboard stats (monthly totals, charts)   |
+| `GET`    | `/api/dashboard/summary`  | Dashboard stats (`?month=YYYY-MM`)         |
 | `GET`    | `/api/report/monthly`     | Monthly report (`?month=YYYY-MM`)          |
-| `GET`    | `/api/alerts`             | Budget overspend alerts                    |
+| `GET`    | `/api/alerts`             | Budget overspend alerts (`?month=YYYY-MM`) |
 | `GET`    | `/api/export/csv`         | Download expenses as CSV                   |
 | `POST`   | `/api/insights`           | Generate AI spending insights              |
 
@@ -266,7 +267,7 @@ If you prefer running locally without Docker:
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 20+
 - Yarn
 - MongoDB 7 (running on localhost:27017)
 
@@ -274,7 +275,7 @@ If you prefer running locally without Docker:
 ```bash
 cd backend
 cp .env.example .env        # Edit with your values
-pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+pip install -r requirements.txt
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 ```
 
@@ -296,7 +297,7 @@ MongoDB collections are auto-created on first use:
 
 - **categories** -- 6 default categories seeded on startup
 - **expenses** -- User expense records
-- **budgets** -- Monthly budget limits per category
+- **budgets** -- Month-wise budget limits per category (keyed by category + YYYY-MM month)
 
 Data persists in a Docker volume (`mongo_data`). To reset:
 ```bash
