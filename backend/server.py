@@ -414,7 +414,7 @@ async def get_monthly_report(month: Optional[str] = None):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Expense Tracker API"}
+    return {"message": "Spendrax API"}
 
 app.include_router(api_router)
 

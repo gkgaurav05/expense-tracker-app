@@ -20,7 +20,7 @@ export default function Sidebar() {
           data-testid="app-logo"
           className="w-11 h-11 rounded-full bg-[#FDE047] flex items-center justify-center font-black text-[#0A0A0A] text-xl mb-8 shadow-lg shadow-[#FDE047]/20"
         >
-          R
+          S
         </div>
         {navItems.map((item) => (
           <Tooltip key={item.to}>
