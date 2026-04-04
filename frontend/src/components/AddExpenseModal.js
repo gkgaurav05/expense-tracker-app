@@ -93,7 +93,9 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">Amount</label>
             <div className="relative">
-              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[#A1A1AA] font-semibold text-sm">Rs.</span>
+              {!amount && (
+                <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[#A1A1AA] font-semibold text-sm pointer-events-none">Rs.</span>
+              )}
               <input
                 data-testid="expense-amount-input"
                 type="number"
@@ -101,7 +103,7 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
                 step="1"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0"
+                placeholder={amount ? '' : '0'}
                 className="pill-input w-full pl-12"
               />
             </div>
