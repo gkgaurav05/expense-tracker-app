@@ -109,6 +109,9 @@ async def delete_category(category_id: str):
 
 @api_router.post("/expenses")
 async def create_expense(data: ExpenseCreate):
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if data.date > today:
+        raise HTTPException(400, "Cannot add expenses for future dates")
     doc = {
         "id": str(uuid.uuid4()),
         "amount": data.amount,

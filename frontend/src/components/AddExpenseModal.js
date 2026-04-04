@@ -201,6 +201,8 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
                   mode="single"
                   selected={date}
                   onSelect={(d) => { setDate(d); setCalendarOpen(false); }}
+                  disabled={{ after: new Date() }}
+                  toDate={new Date()}
                   initialFocus
                   className="text-white"
                 />
