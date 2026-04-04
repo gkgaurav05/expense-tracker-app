@@ -161,8 +161,18 @@ spendrax/
 |   +-- .dockerignore
 |   +-- .env                    # Environment variables (git-ignored)
 |   +-- .env.example            # Template for .env
-|   +-- server.py               # FastAPI application (all endpoints)
+|   +-- server.py               # App setup, startup events, CORS, router wiring
+|   +-- database.py             # MongoDB client & db instance
+|   +-- models.py               # Pydantic request models
 |   +-- requirements.txt        # Python dependencies
+|   +-- routes/
+|       +-- categories.py       # /api/categories CRUD
+|       +-- expenses.py         # /api/expenses CRUD
+|       +-- budgets.py          # /api/budgets CRUD
+|       +-- dashboard.py        # /api/dashboard/summary
+|       +-- alerts.py           # /api/alerts
+|       +-- reports.py          # /api/report/monthly + /api/export/csv
+|       +-- insights.py         # /api/insights (OpenAI)
 |
 +-- frontend/
     +-- Dockerfile              # Multi-stage: Node build + Nginx serve
