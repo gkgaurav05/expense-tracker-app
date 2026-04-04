@@ -12,7 +12,7 @@ import io
 import uuid
 from datetime import datetime, timezone, timedelta
 from fastapi.responses import StreamingResponse
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -262,24 +262,30 @@ async def get_ai_insights():
         for b in budgets
     ]) if budgets else "No budgets set yet."
 
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return {"insights": "AI insights unavailable. API key not configured."}
 
     try:
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"insights-{str(uuid.uuid4())}",
-            system_message=(
-                "You are a smart personal finance advisor. Analyze the user's spending data and provide "
-                "actionable, concise insights. Use INR currency. Be specific about patterns, potential savings, "
-                "and budget adherence. Keep it friendly, brief, and helpful. Use bullet points. Max 5 insights."
-            )
-        ).with_model("gemini", "gemini-3-flash-preview")
-
-        msg = UserMessage(text=f"My recent expenses:\n{expense_text}\n\nMy budgets:\n{budget_text}\n\nGive me key spending insights.")
-        response = await chat.send_message(msg)
-        return {"insights": response}
+        client = AsyncOpenAI(api_key=api_key)
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a smart personal finance advisor. Analyze the user's spending data and provide "
+                        "actionable, concise insights. Use INR currency. Be specific about patterns, potential savings, "
+                        "and budget adherence. Keep it friendly, brief, and helpful. Use bullet points. Max 5 insights."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"My recent expenses:\n{expense_text}\n\nMy budgets:\n{budget_text}\n\nGive me key spending insights."
+                }
+            ],
+        )
+        return {"insights": response.choices[0].message.content}
     except Exception as e:
         logger.error(f"AI insights error: {e}")
         return {"insights": "Unable to generate insights right now. Please try again later."}
@@ -414,7 +420,7 @@ async def get_monthly_report(month: Optional[str] = None):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Expense Tracker API"}
+    return {"message": "Spendrax API"}
 
 app.include_router(api_router)
 

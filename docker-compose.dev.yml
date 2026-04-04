@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  # ── MongoDB ────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: spendrax-mongo-dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_dev_data:/data/db
+
+  # ── Backend (FastAPI with hot reload) ──────
+  backend:
+    build: ./backend
+    container_name: spendrax-backend-dev
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./backend/.env
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=spendrax_db
+    volumes:
+      - ./backend:/app
+    command: uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+    depends_on:
+      - mongo
+
+  # ── Frontend (React dev server) ────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: spendrax-frontend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_BACKEND_URL=http://localhost:8001
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+
+volumes:
+  mongo_dev_data:
+    driver: local
