@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone
 import uuid
-
 from database import db, client
 from routes import categories, expenses, budgets, dashboard, alerts, reports, insights
 
