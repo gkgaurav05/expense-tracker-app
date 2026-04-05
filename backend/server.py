@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import uuid
 from database import db, client
-from routes import categories, expenses, budgets, dashboard, alerts, reports, insights
+from routes import auth, categories, expenses, budgets, dashboard, alerts, reports, insights, savings
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -60,6 +60,7 @@ async def seed_default_categories():
 
 # ── Register Routers ────────────────────────────────────────────────
 
+api_router.include_router(auth.router)
 api_router.include_router(categories.router)
 api_router.include_router(expenses.router)
 api_router.include_router(budgets.router)
@@ -67,6 +68,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(alerts.router)
 api_router.include_router(reports.router)
 api_router.include_router(insights.router)
+api_router.include_router(savings.router)
 
 @api_router.get("/")
 async def root():

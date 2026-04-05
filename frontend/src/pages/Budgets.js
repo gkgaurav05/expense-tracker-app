@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { PiggyBank, Save, Trash2, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { PiggyBank, Save, Trash2, ChevronLeft, ChevronRight, CalendarDays, Target, Wallet, TrendingUp, Clock } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
-import { format, addMonths, subMonths } from 'date-fns';
+import { format, addMonths, subMonths, getDaysInMonth, getDate } from 'date-fns';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
 
@@ -19,6 +19,12 @@ export default function Budgets() {
   const monthStr = format(currentDate, 'yyyy-MM');
   const monthLabel = format(currentDate, 'MMMM yyyy');
   const isCurrentMonth = monthStr === format(new Date(), 'yyyy-MM');
+
+  // Calculate days info for current month
+  const today = new Date();
+  const daysInMonth = getDaysInMonth(currentDate);
+  const dayOfMonth = isCurrentMonth ? getDate(today) : daysInMonth;
+  const daysRemaining = isCurrentMonth ? daysInMonth - dayOfMonth : 0;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -75,6 +81,12 @@ export default function Budgets() {
     }
   };
 
+  // Calculate totals
+  const totalBudget = budgets.reduce((sum, b) => sum + b.amount, 0);
+  const totalSpent = Object.values(spending).reduce((sum, v) => sum + v, 0);
+  const totalRemaining = totalBudget - totalSpent;
+  const usedPercentage = totalBudget > 0 ? Math.min(100, (totalSpent / totalBudget) * 100) : 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -111,6 +123,103 @@ export default function Budgets() {
         )}
       </div>
 
+      {/* Month Summary Card */}
+      {totalBudget > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...spring, delay: 0.1 }}
+          className={`glass-card ${isCurrentMonth ? 'border-[#FDE047]/30' : totalRemaining >= 0 ? 'border-green-500/30' : 'border-red-500/30'}`}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={18} className="text-[#FDE047]" />
+              <span className="font-semibold text-lg">{monthLabel}</span>
+              {isCurrentMonth ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[#FDE047]/20 text-[#FDE047] font-semibold">Current Month</span>
+              ) : (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${totalRemaining >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                  {totalRemaining >= 0 ? 'Under Budget' : 'Over Budget'}
+                </span>
+              )}
+            </div>
+            {isCurrentMonth && (
+              <div className="flex items-center gap-1.5 text-sm text-[#A1A1AA]">
+                <Clock size={14} />
+                <span>Day {dayOfMonth} of {daysInMonth}</span>
+                <span className="text-[#FDE047] font-medium">• {daysRemaining} days left</span>
+              </div>
+            )}
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="text-center p-3 rounded-xl bg-white/[0.03]">
+              <div className="flex items-center justify-center gap-1.5 text-[#A1A1AA] text-xs mb-1">
+                <Target size={12} />
+                <span>Budget</span>
+              </div>
+              <p className="font-bold text-lg font-['General_Sans']">{formatINR(totalBudget)}</p>
+            </div>
+            <div className="text-center p-3 rounded-xl bg-white/[0.03]">
+              <div className="flex items-center justify-center gap-1.5 text-[#A1A1AA] text-xs mb-1">
+                <Wallet size={12} />
+                <span>Spent</span>
+              </div>
+              <p className="font-bold text-lg font-['General_Sans']">{formatINR(totalSpent)}</p>
+            </div>
+            <div className="text-center p-3 rounded-xl bg-white/[0.03]">
+              <div className="flex items-center justify-center gap-1.5 text-[#A1A1AA] text-xs mb-1">
+                <TrendingUp size={12} />
+                <span>{isCurrentMonth ? 'Remaining' : totalRemaining >= 0 ? 'Saved' : 'Overspent'}</span>
+              </div>
+              <p className={`font-bold text-lg font-['General_Sans'] ${totalRemaining >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {totalRemaining >= 0 ? '' : '-'}{formatINR(Math.abs(totalRemaining))}
+              </p>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-[#A1A1AA]">
+              <span>{Math.round(usedPercentage)}% used</span>
+              <span>{Math.round(100 - usedPercentage)}% available</span>
+            </div>
+            <div className="h-3 bg-white/[0.06] rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${usedPercentage}%` }}
+                transition={{ duration: 0.8, ease: 'easeOut' }}
+                className="h-full rounded-full"
+                style={{
+                  background: usedPercentage > 100
+                    ? '#f87171'
+                    : usedPercentage > 80
+                      ? '#fbbf24'
+                      : '#4ade80'
+                }}
+              />
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* No Budget Set Message */}
+      {totalBudget === 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...spring, delay: 0.1 }}
+          className="glass-card text-center py-6"
+        >
+          <PiggyBank size={32} className="mx-auto text-[#A1A1AA]/50 mb-2" />
+          <p className="text-[#A1A1AA] text-sm">No budgets set for {monthLabel}</p>
+          <p className="text-[#A1A1AA]/70 text-xs mt-1">Set budgets below to start tracking</p>
+        </motion.div>
+      )}
+
+      {/* Category Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {categories.map((cat, i) => {
           const budget = budgetMap[cat.name];
@@ -124,7 +233,7 @@ export default function Budgets() {
               key={cat.id}
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ ...spring, delay: i * 0.05 }}
+              transition={{ ...spring, delay: 0.15 + i * 0.05 }}
               className="glass-card-sm space-y-4"
               data-testid={`budget-card-${cat.name}`}
             >
