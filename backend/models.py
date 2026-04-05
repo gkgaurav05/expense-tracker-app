@@ -1,5 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
+
+
+class UserRegister(BaseModel):
+    email: EmailStr
+    name: str
+    password: str
 
 
 class CategoryCreate(BaseModel):
