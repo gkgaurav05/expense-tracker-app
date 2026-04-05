@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Trash2, Receipt, Filter, Pencil, Download } from 'lucide-react';
+import { Plus, Trash2, Receipt, Filter, Pencil, Download, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
+import { format, addMonths, subMonths } from 'date-fns';
 import AddExpenseModal from '@/components/AddExpenseModal';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
@@ -15,10 +16,20 @@ export default function Expenses() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  const monthStr = format(currentDate, 'yyyy-MM');
+  const monthLabel = format(currentDate, 'MMMM yyyy');
+  const isCurrentMonth = monthStr === format(new Date(), 'yyyy-MM');
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
-      const params = filter !== 'all' ? { category: filter } : {};
+      const params = {
+        start_date: `${monthStr}-01`,
+        end_date: `${monthStr}-31`,
+      };
+      if (filter !== 'all') params.category = filter;
       const [expRes, catRes] = await Promise.all([
         api.getExpenses(params),
         api.getCategories(),
@@ -30,7 +41,7 @@ export default function Expenses() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, monthStr]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -96,8 +107,37 @@ export default function Expenses() {
         </div>
       </motion.div>
 
-      {/* Filter */}
-      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.1 }} className="flex items-center gap-3">
+      {/* Month Navigator */}
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.05 }} className="flex items-center gap-4">
+        <button onClick={() => setCurrentDate((d) => subMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
+          <ChevronLeft size={18} />
+        </button>
+        <span className="text-lg font-semibold font-['General_Sans'] flex items-center gap-2">
+          <CalendarDays size={16} className="text-[#FDE047]" /> {monthLabel}
+        </span>
+        <button onClick={() => setCurrentDate((d) => addMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
+          <ChevronRight size={18} />
+        </button>
+        {!isCurrentMonth && (
+          <button onClick={() => setCurrentDate(new Date())} className="text-xs text-[#FDE047] font-semibold hover:underline ml-2">
+            Back to Current Month
+          </button>
+        )}
+      </motion.div>
+
+      {/* Summary + Filter */}
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.1 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-6">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">Total</p>
+            <p className="text-xl font-bold font-['General_Sans']">{formatINR(expenses.reduce((s, e) => s + e.amount, 0))}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">Count</p>
+            <p className="text-xl font-bold font-['General_Sans']">{expenses.length}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
         <Filter size={16} className="text-[#A1A1AA]" />
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger data-testid="expense-filter-select" className="w-48 pill-input h-10 text-sm">
@@ -115,6 +155,7 @@ export default function Expenses() {
             ))}
           </SelectContent>
         </Select>
+        </div>
       </motion.div>
 
       {/* List */}
@@ -139,14 +180,16 @@ export default function Expenses() {
               className="glass-card-sm flex items-center justify-between group"
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${catColorMap[exp.category] || '#FDE047'}20` }}>
-                  <span className="w-3 h-3 rounded-full" style={{ background: catColorMap[exp.category] || '#FDE047' }} />
+                <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex flex-col items-center justify-center leading-none">
+                  <span className="text-xs font-bold text-white">{exp.date?.slice(8)}</span>
+                  <span className="text-[10px] text-[#A1A1AA] uppercase">{new Date(exp.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</span>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{exp.category}</p>
-                  <p className="text-xs text-[#A1A1AA]">
-                    {exp.description ? `${exp.description} · ` : ''}{exp.date}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: catColorMap[exp.category] || '#FDE047' }} />
+                  <div>
+                    <p className="text-sm font-semibold text-white">{exp.category}</p>
+                    <p className="text-xs text-[#A1A1AA]">{exp.description || '-'}</p>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">

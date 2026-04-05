@@ -3,7 +3,7 @@ import axios from 'axios';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export const api = {
-  getDashboardSummary: () => axios.get(`${API}/dashboard/summary`),
+  getDashboardSummary: (params) => axios.get(`${API}/dashboard/summary`, { params }),
   getExpenses: (params) => axios.get(`${API}/expenses`, { params }),
   createExpense: (data) => axios.post(`${API}/expenses`, data),
   updateExpense: (id, data) => axios.put(`${API}/expenses/${id}`, data),
@@ -11,11 +11,11 @@ export const api = {
   getCategories: () => axios.get(`${API}/categories`),
   createCategory: (data) => axios.post(`${API}/categories`, data),
   deleteCategory: (id) => axios.delete(`${API}/categories/${id}`),
-  getBudgets: () => axios.get(`${API}/budgets`),
+  getBudgets: (params) => axios.get(`${API}/budgets`, { params }),
   createOrUpdateBudget: (data) => axios.post(`${API}/budgets`, data),
   deleteBudget: (id) => axios.delete(`${API}/budgets/${id}`),
-  getInsights: () => axios.post(`${API}/insights`),
-  getAlerts: () => axios.get(`${API}/alerts`),
+  getInsights: (params) => axios.post(`${API}/insights`, null, { params }),
+  getAlerts: (params) => axios.get(`${API}/alerts`, { params }),
   getMonthlyReport: (month) => axios.get(`${API}/report/monthly`, { params: { month } }),
   exportCSV: (params) => axios.get(`${API}/export/csv`, { params, responseType: 'blob' }),
 };

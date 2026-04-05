@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { PiggyBank, Save, Trash2 } from 'lucide-react';
+import { PiggyBank, Save, Trash2, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
+import { format, addMonths, subMonths } from 'date-fns';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
 
@@ -13,20 +14,26 @@ export default function Budgets() {
   const [spending, setSpending] = useState({});
   const [budgetInputs, setBudgetInputs] = useState({});
   const [loading, setLoading] = useState(true);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  const fetchData = async () => {
+  const monthStr = format(currentDate, 'yyyy-MM');
+  const monthLabel = format(currentDate, 'MMMM yyyy');
+  const isCurrentMonth = monthStr === format(new Date(), 'yyyy-MM');
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
-      const [catRes, budRes, sumRes] = await Promise.all([
+      const [catRes, budRes, expRes] = await Promise.all([
         api.getCategories(),
-        api.getBudgets(),
-        api.getDashboardSummary(),
+        api.getBudgets({ month: monthStr }),
+        api.getExpenses({ start_date: `${monthStr}-01`, end_date: `${monthStr}-31` }),
       ]);
       setCategories(catRes.data);
       setBudgets(budRes.data);
 
       const spendMap = {};
-      (sumRes.data.category_breakdown || []).forEach((c) => {
-        spendMap[c.category] = c.amount;
+      (expRes.data || []).forEach((e) => {
+        spendMap[e.category] = (spendMap[e.category] || 0) + e.amount;
       });
       setSpending(spendMap);
 
@@ -38,9 +45,9 @@ export default function Budgets() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [monthStr]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSave = async (categoryName) => {
     const val = parseFloat(budgetInputs[categoryName]);
@@ -49,7 +56,7 @@ export default function Budgets() {
       return;
     }
     try {
-      await api.createOrUpdateBudget({ category: categoryName, amount: val });
+      await api.createOrUpdateBudget({ category: categoryName, amount: val, month: monthStr });
       toast.success(`Budget set for ${categoryName}`);
       fetchData();
     } catch {
@@ -85,6 +92,24 @@ export default function Budgets() {
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-['General_Sans']">Budgets</h1>
         <p className="text-sm text-[#A1A1AA] mt-1">Set monthly spending limits per category</p>
       </motion.div>
+
+      {/* Month Navigator */}
+      <div className="flex items-center gap-4">
+        <button onClick={() => setCurrentDate((d) => subMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
+          <ChevronLeft size={18} />
+        </button>
+        <span className="text-lg font-semibold font-['General_Sans'] flex items-center gap-2">
+          <CalendarDays size={16} className="text-[#FDE047]" /> {monthLabel}
+        </span>
+        <button onClick={() => setCurrentDate((d) => addMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
+          <ChevronRight size={18} />
+        </button>
+        {!isCurrentMonth && (
+          <button onClick={() => setCurrentDate(new Date())} className="text-xs text-[#FDE047] font-semibold hover:underline ml-2">
+            Back to Current Month
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {categories.map((cat, i) => {

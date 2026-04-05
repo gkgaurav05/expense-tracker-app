@@ -38,6 +38,7 @@ services:
     environment:
       - REACT_APP_BACKEND_URL=http://localhost:8001
       - CHOKIDAR_USEPOLLING=true
+      - NODE_OPTIONS=--max-old-space-size=512
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public

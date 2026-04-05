@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, TrendingDown } from 'lucide-react';
 import { api, formatINR } from '@/lib/api';
 
-export default function BudgetAlerts() {
+export default function BudgetAlerts({ month }) {
   const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
-    api.getAlerts().then(({ data }) => setAlerts(data)).catch(() => {});
-  }, []);
+    const params = month ? { month } : {};
+    api.getAlerts(params).then(({ data }) => setAlerts(data)).catch(() => {});
+  }, [month]);
 
   if (alerts.length === 0) return null;
 
