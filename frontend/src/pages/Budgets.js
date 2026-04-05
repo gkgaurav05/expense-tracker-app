@@ -85,7 +85,9 @@ export default function Budgets() {
   const totalBudget = budgets.reduce((sum, b) => sum + b.amount, 0);
   const totalSpent = Object.values(spending).reduce((sum, v) => sum + v, 0);
   const totalRemaining = totalBudget - totalSpent;
-  const usedPercentage = totalBudget > 0 ? Math.min(100, (totalSpent / totalBudget) * 100) : 0;
+  const actualPercentage = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+  const barPercentage = Math.min(100, actualPercentage); // Cap bar width at 100%
+  const isOverBudget = actualPercentage > 100;
 
   if (loading) {
     return (
@@ -182,20 +184,26 @@ export default function Budgets() {
 
           {/* Progress Bar */}
           <div className="space-y-2">
-            <div className="flex justify-between text-xs text-[#A1A1AA]">
-              <span>{Math.round(usedPercentage)}% used</span>
-              <span>{Math.round(100 - usedPercentage)}% available</span>
+            <div className="flex justify-between text-xs">
+              <span className={isOverBudget ? 'text-red-400 font-semibold' : 'text-[#A1A1AA]'}>
+                {Math.round(actualPercentage)}% used
+              </span>
+              {isOverBudget ? (
+                <span className="text-red-400 font-semibold">Overspent by {formatINR(Math.abs(totalRemaining))}</span>
+              ) : (
+                <span className="text-[#A1A1AA]">{Math.round(100 - actualPercentage)}% available</span>
+              )}
             </div>
             <div className="h-3 bg-white/[0.06] rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: `${usedPercentage}%` }}
+                animate={{ width: `${barPercentage}%` }}
                 transition={{ duration: 0.8, ease: 'easeOut' }}
                 className="h-full rounded-full"
                 style={{
-                  background: usedPercentage > 100
+                  background: isOverBudget
                     ? '#f87171'
-                    : usedPercentage > 80
+                    : actualPercentage > 80
                       ? '#fbbf24'
                       : '#4ade80'
                 }}
@@ -225,7 +233,8 @@ export default function Budgets() {
           const budget = budgetMap[cat.name];
           const spent = spending[cat.name] || 0;
           const limit = budget?.amount || 0;
-          const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+          const actualPct = limit > 0 ? (spent / limit) * 100 : 0;
+          const barPct = Math.min(100, actualPct); // Cap bar width at 100%
           const isOver = spent > limit && limit > 0;
 
           return (
@@ -258,14 +267,16 @@ export default function Budgets() {
               {limit > 0 && (
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-[#A1A1AA]">Spent: {formatINR(spent)}</span>
                     <span className={isOver ? 'text-red-400 font-semibold' : 'text-[#A1A1AA]'}>
-                      {isOver ? 'Over budget!' : `${formatINR(limit - spent)} left`}
+                      {formatINR(spent)} ({Math.round(actualPct)}%)
+                    </span>
+                    <span className={isOver ? 'text-red-400 font-semibold' : 'text-[#A1A1AA]'}>
+                      {isOver ? `Overspent by ${formatINR(spent - limit)}` : `${formatINR(limit - spent)} left`}
                     </span>
                   </div>
                   <Progress
-                    value={pct}
-                    className="h-2 bg-white/[0.06] rounded-full"
+                    value={barPct}
+                    className={`h-2 rounded-full ${isOver ? '[&>div]:bg-red-500' : actualPct > 80 ? '[&>div]:bg-amber-400' : '[&>div]:bg-green-400'}`}
                     data-testid={`budget-progress-${cat.name}`}
                   />
                 </div>
