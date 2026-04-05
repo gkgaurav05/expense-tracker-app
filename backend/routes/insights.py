@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from datetime import datetime, timezone
 import calendar
@@ -7,14 +7,16 @@ import logging
 
 from openai import AsyncOpenAI
 from database import db
+from auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.post("/insights")
-async def get_ai_insights(month: Optional[str] = None):
+async def get_ai_insights(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc)
+    user_id = current_user["id"]
 
     # Determine target month
     if month:
@@ -40,11 +42,11 @@ async def get_ai_insights(month: Optional[str] = None):
 
     # Fetch expenses for the selected month
     expenses = await db.expenses.find(
-        {"date": {"$gte": month_start, "$lt": month_end}}, {"_id": 0}
+        {"user_id": user_id, "date": {"$gte": month_start, "$lt": month_end}}, {"_id": 0}
     ).sort("date", -1).to_list(10000)
 
     # Fetch budgets for the selected month
-    budgets = await db.budgets.find({"month": target_month}, {"_id": 0}).to_list(100)
+    budgets = await db.budgets.find({"user_id": user_id, "month": target_month}, {"_id": 0}).to_list(100)
 
     if not expenses:
         return {"insights": f"No expenses found for {target_month}. Add some expenses first to get AI-powered insights!"}
@@ -57,7 +59,7 @@ async def get_ai_insights(month: Optional[str] = None):
     prev_start = f"{prev_year}-{prev_m:02d}-01"
     prev_end = f"{year}-{m:02d}-01"
     prev_expenses = await db.expenses.find(
-        {"date": {"$gte": prev_start, "$lt": prev_end}}, {"_id": 0}
+        {"user_id": user_id, "date": {"$gte": prev_start, "$lt": prev_end}}, {"_id": 0}
     ).to_list(10000)
 
     prev_total = sum(e["amount"] for e in prev_expenses)
