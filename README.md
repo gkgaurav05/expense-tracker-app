@@ -15,7 +15,7 @@ A modern, full-stack expense tracking application built for students and profess
 - **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets, scoped to the selected month across Dashboard and Budgets pages
 - **Dashboard** -- Month-navigable overview with total monthly spend, weekly spend (current month) or avg/day (past months), budget remaining, daily spending bar chart, category pie chart, budget alerts, and recent expenses -- all scoped to the selected month
 - **Weekly/Monthly Summary** -- Period navigation with trend charts and category breakdown with percentage bars
-- **AI Insights** -- OpenAI-powered spending analysis with personalized savings tips
+- **AI Insights** -- Month-navigable OpenAI-powered spending analysis with pace projections, budget exceed warnings, previous month comparison, and personalized savings tips
 - **Shareable Reports** -- Monthly report cards with share via Web Share API, copy link, or CSV download
 - **CSV Export** -- Download all expense data as CSV
 - **INR Currency** -- Formatted in Indian Rupees throughout
@@ -244,7 +244,7 @@ All endpoints are prefixed with `/api`.
 | `GET`    | `/api/report/monthly`     | Monthly report (`?month=YYYY-MM`)          |
 | `GET`    | `/api/alerts`             | Budget overspend alerts (`?month=YYYY-MM`) |
 | `GET`    | `/api/export/csv`         | Download expenses as CSV                   |
-| `POST`   | `/api/insights`           | Generate AI spending insights              |
+| `POST`   | `/api/insights`           | Generate AI spending insights (`?month=YYYY-MM`) |
 
 ---
 
