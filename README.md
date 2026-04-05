@@ -10,15 +10,17 @@ A modern, full-stack expense tracking application built for students and profess
 
 - **Expense Management** -- Add, edit, delete expenses with category, description, and date picker (future dates blocked). Month navigator to browse expenses by month with inline summary stats (total spent, count). Category filter works within the selected month.
 - **Smart Categories** -- 6 pre-built categories (Food & Dining, Transport, Entertainment, Bills & Utilities, Shopping, Health) + custom categories
-- **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars and month navigation
+- **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars, month navigation, and month summary card showing total budget/spent/remaining with days tracker for current month
 - **Budget History** -- Navigate to any previous month to view or set budgets; each month maintains its own budget configuration
 - **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets, scoped to the selected month across Dashboard and Budgets pages
 - **Dashboard** -- Month-navigable overview with total monthly spend, weekly spend (current month) or avg/day (past months), budget remaining, daily spending bar chart, category pie chart, budget alerts, and recent expenses -- all scoped to the selected month
 - **Weekly/Monthly Summary** -- Period navigation with trend charts and category breakdown with percentage bars
+- **Savings Tracker** -- Dedicated page analyzing budget performance over 3/6/12 months with monthly breakdown, cumulative category savings, savings rate percentage, and motivational feedback
 - **AI Insights** -- Month-navigable OpenAI-powered spending analysis with pace projections, budget exceed warnings, previous month comparison, and personalized savings tips
 - **Shareable Reports** -- Monthly report cards with share via Web Share API, copy link, or CSV download
 - **CSV Export** -- Download all expense data as CSV
 - **INR Currency** -- Formatted in Indian Rupees throughout
+- **User Authentication** -- JWT-based auth with login/register, user-scoped data (each user sees only their own expenses/budgets)
 
 ---
 
@@ -29,6 +31,7 @@ A modern, full-stack expense tracking application built for students and profess
 | Frontend   | React 19, Tailwind CSS, shadcn/ui, Recharts, Framer Motion       |
 | Backend    | FastAPI (Python), Motor (async MongoDB driver)                    |
 | Database   | MongoDB 7                                                         |
+| Auth       | JWT (python-jose), bcrypt password hashing, OAuth2PasswordBearer  |
 | AI         | OpenAI GPT-4o-mini                                                |
 | Deployment | Docker, Docker Compose, Nginx (production reverse proxy)          |
 
@@ -65,6 +68,7 @@ MONGO_URL=mongodb://localhost:27017
 DB_NAME=spendrax_db
 CORS_ORIGINS=*
 OPENAI_API_KEY=your_key_here
+JWT_SECRET_KEY=your-secret-key-change-in-production
 ```
 
 > **Note:** `MONGO_URL` is automatically overridden by Docker Compose to `mongodb://mongo:27017`. The `.env` value is a fallback for non-Docker environments.
@@ -139,6 +143,7 @@ docker compose down -v
 | `DB_NAME`          | Yes      | Database name (default: `spendrax_db`)         |
 | `CORS_ORIGINS`     | Yes      | Allowed CORS origins (`*` for all)             |
 | `OPENAI_API_KEY`   | No       | OpenAI API key for AI-powered insights         |
+| `JWT_SECRET_KEY`   | Yes      | Secret key for JWT token signing               |
 
 ### Frontend (`frontend/.env`)
 
@@ -164,8 +169,10 @@ spendrax/
 |   +-- server.py               # App setup, startup events, CORS, router wiring
 |   +-- database.py             # MongoDB client & db instance
 |   +-- models.py               # Pydantic request models
+|   +-- auth.py                 # JWT utilities, password hashing, get_current_user
 |   +-- requirements.txt        # Python dependencies
 |   +-- routes/
+|       +-- auth.py             # /api/auth (register, login, me)
 |       +-- categories.py       # /api/categories CRUD
 |       +-- expenses.py         # /api/expenses CRUD
 |       +-- budgets.py          # /api/budgets CRUD
@@ -190,7 +197,11 @@ spendrax/
         +-- lib/
         |   +-- api.js          # API client + INR formatter
         |   +-- utils.js        # shadcn utility
+        +-- context/
+        |   +-- AuthContext.js  # Auth state management (user, token, login/logout)
         +-- pages/
+        |   +-- Login.js        # Login page
+        |   +-- Register.js     # Registration page
         |   +-- Dashboard.js    # Overview with charts & stats
         |   +-- Expenses.js     # Expense CRUD + filtering
         |   +-- Budgets.js      # Budget management per category
@@ -198,7 +209,8 @@ spendrax/
         |   +-- Reports.js      # Shareable monthly report
         |   +-- Insights.js     # AI-powered spending analysis
         +-- components/
-            +-- Sidebar.js           # Navigation (desktop + mobile)
+            +-- Sidebar.js           # Navigation (desktop + mobile) + logout
+            +-- ProtectedRoute.js    # Route guard for authenticated users
             +-- AddExpenseModal.js   # Add/edit expense dialog
             +-- SpendingCharts.js    # Recharts bar & pie charts
             +-- BudgetAlerts.js      # Overspend alert banners
@@ -209,41 +221,49 @@ spendrax/
 
 ## API Endpoints
 
-All endpoints are prefixed with `/api`.
+All endpoints are prefixed with `/api`. Endpoints marked with 🔒 require authentication (JWT token in `Authorization: Bearer <token>` header).
 
-### Expenses
+### Authentication
 
 | Method   | Endpoint                | Description              |
 | -------- | ----------------------- | ------------------------ |
-| `GET`    | `/api/expenses`         | List expenses (filterable by `category`, `start_date`, `end_date`) |
+| `POST`   | `/api/auth/register`    | Register new user        |
+| `POST`   | `/api/auth/login`       | Login (returns JWT token)|
+| `GET`    | `/api/auth/me`          | Get current user 🔒      |
+
+### Expenses 🔒
+
+| Method   | Endpoint                | Description              |
+| -------- | ----------------------- | ------------------------ |
+| `GET`    | `/api/expenses`         | List user's expenses (filterable by `category`, `start_date`, `end_date`) |
 | `POST`   | `/api/expenses`         | Create expense           |
 | `PUT`    | `/api/expenses/{id}`    | Update expense           |
 | `DELETE` | `/api/expenses/{id}`    | Delete expense           |
 
-### Categories
+### Categories 🔒
 
 | Method   | Endpoint                  | Description                     |
 | -------- | ------------------------- | ------------------------------- |
-| `GET`    | `/api/categories`         | List all categories             |
+| `GET`    | `/api/categories`         | List default + user's custom categories |
 | `POST`   | `/api/categories`         | Create custom category          |
 | `DELETE` | `/api/categories/{id}`    | Delete custom category (not default) |
 
-### Budgets
+### Budgets 🔒
 
 | Method   | Endpoint                | Description                                          |
 | -------- | ----------------------- | ---------------------------------------------------- |
-| `GET`    | `/api/budgets`          | List budgets (filterable by `?month=YYYY-MM`)        |
+| `GET`    | `/api/budgets`          | List user's budgets (filterable by `?month=YYYY-MM`) |
 | `POST`   | `/api/budgets`          | Create or update budget (with `month` field)         |
 | `DELETE` | `/api/budgets/{id}`     | Delete budget                                        |
 
-### Analytics & Reports
+### Analytics & Reports 🔒
 
 | Method   | Endpoint                  | Description                                |
 | -------- | ------------------------- | ------------------------------------------ |
 | `GET`    | `/api/dashboard/summary`  | Dashboard stats (`?month=YYYY-MM`)         |
 | `GET`    | `/api/report/monthly`     | Monthly report (`?month=YYYY-MM`)          |
 | `GET`    | `/api/alerts`             | Budget overspend alerts (`?month=YYYY-MM`) |
-| `GET`    | `/api/export/csv`         | Download expenses as CSV                   |
+| `GET`    | `/api/export/csv`         | Download user's expenses as CSV            |
 | `POST`   | `/api/insights`           | Generate AI spending insights (`?month=YYYY-MM`) |
 
 ---
@@ -305,9 +325,10 @@ Open `http://localhost:3000`.
 
 MongoDB collections are auto-created on first use:
 
-- **categories** -- 6 default categories seeded on startup
-- **expenses** -- User expense records
-- **budgets** -- Month-wise budget limits per category (keyed by category + YYYY-MM month)
+- **users** -- User accounts (email, hashed password, name)
+- **categories** -- 6 default categories seeded on startup + user custom categories
+- **expenses** -- User expense records (scoped by `user_id`)
+- **budgets** -- Month-wise budget limits per category (scoped by `user_id` + category + YYYY-MM month)
 
 Data persists in a Docker volume (`mongo_data`). To reset:
 ```bash
