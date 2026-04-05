@@ -1,17 +1,27 @@
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Receipt, PiggyBank, Sparkles, BarChart3, Share2 } from 'lucide-react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Receipt, PiggyBank, Sparkles, BarChart3, Share2, LogOut, TrendingUp, Wallet } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuth } from '@/context/AuthContext';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/budgets', icon: PiggyBank, label: 'Budgets' },
+  { to: '/savings', icon: Wallet, label: 'Savings' },
   { to: '/summary', icon: BarChart3, label: 'Summary' },
   { to: '/reports', icon: Share2, label: 'Reports' },
   { to: '/insights', icon: Sparkles, label: 'Insights' },
 ];
 
 export default function Sidebar() {
+  const { logout, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
     <TooltipProvider delayDuration={0}>
       {/* Desktop */}
@@ -45,6 +55,36 @@ export default function Sidebar() {
             </TooltipContent>
           </Tooltip>
         ))}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* User info & Logout */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="w-10 h-10 rounded-full bg-white/[0.08] flex items-center justify-center text-[#FDE047] font-bold text-sm uppercase">
+              {user?.name?.charAt(0) || 'U'}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="bg-[#171717] border-white/10 text-white">
+            {user?.name || 'User'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleLogout}
+              data-testid="nav-logout"
+              className="w-12 h-12 rounded-2xl flex items-center justify-center text-[#A1A1AA] hover:bg-red-500/20 hover:text-red-400 transition-all duration-200"
+            >
+              <LogOut size={22} strokeWidth={2.2} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="bg-[#171717] border-white/10 text-white">
+            Logout
+          </TooltipContent>
+        </Tooltip>
       </aside>
 
       {/* Mobile bottom bar */}
@@ -52,7 +92,7 @@ export default function Sidebar() {
         data-testid="mobile-nav"
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex justify-around items-center h-16 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-white/[0.08]"
       >
-        {navItems.map((item) => (
+        {navItems.slice(0, 5).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -68,6 +108,13 @@ export default function Sidebar() {
             <span>{item.label}</span>
           </NavLink>
         ))}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center gap-0.5 text-[10px] uppercase tracking-wider font-medium text-[#A1A1AA]"
+        >
+          <LogOut size={20} strokeWidth={2.2} />
+          <span>Logout</span>
+        </button>
       </nav>
     </TooltipProvider>
   );

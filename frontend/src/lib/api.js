@@ -2,22 +2,58 @@ import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+const instance = axios.create({
+  baseURL: API,
+});
+
+// Add token to requests
+let authToken = localStorage.getItem('token');
+
+instance.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
+
 export const api = {
-  getDashboardSummary: (params) => axios.get(`${API}/dashboard/summary`, { params }),
-  getExpenses: (params) => axios.get(`${API}/expenses`, { params }),
-  createExpense: (data) => axios.post(`${API}/expenses`, data),
-  updateExpense: (id, data) => axios.put(`${API}/expenses/${id}`, data),
-  deleteExpense: (id) => axios.delete(`${API}/expenses/${id}`),
-  getCategories: () => axios.get(`${API}/categories`),
-  createCategory: (data) => axios.post(`${API}/categories`, data),
-  deleteCategory: (id) => axios.delete(`${API}/categories/${id}`),
-  getBudgets: (params) => axios.get(`${API}/budgets`, { params }),
-  createOrUpdateBudget: (data) => axios.post(`${API}/budgets`, data),
-  deleteBudget: (id) => axios.delete(`${API}/budgets/${id}`),
-  getInsights: (params) => axios.post(`${API}/insights`, null, { params }),
-  getAlerts: (params) => axios.get(`${API}/alerts`, { params }),
-  getMonthlyReport: (month) => axios.get(`${API}/report/monthly`, { params: { month } }),
-  exportCSV: (params) => axios.get(`${API}/export/csv`, { params, responseType: 'blob' }),
+  // Auth
+  setToken: (token) => {
+    authToken = token;
+  },
+  login: (formData) => instance.post('/auth/login', formData, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  }),
+  register: (data) => instance.post('/auth/register', data),
+  getMe: () => instance.get('/auth/me'),
+
+  // Dashboard & Analytics
+  getDashboardSummary: (params) => instance.get('/dashboard/summary', { params }),
+  getAlerts: (params) => instance.get('/alerts', { params }),
+  getMonthlyReport: (month) => instance.get('/report/monthly', { params: { month } }),
+  exportCSV: (params) => instance.get('/export/csv', { params, responseType: 'blob' }),
+
+  // Expenses
+  getExpenses: (params) => instance.get('/expenses', { params }),
+  createExpense: (data) => instance.post('/expenses', data),
+  updateExpense: (id, data) => instance.put(`/expenses/${id}`, data),
+  deleteExpense: (id) => instance.delete(`/expenses/${id}`),
+
+  // Categories
+  getCategories: () => instance.get('/categories'),
+  createCategory: (data) => instance.post('/categories', data),
+  deleteCategory: (id) => instance.delete(`/categories/${id}`),
+
+  // Budgets
+  getBudgets: (params) => instance.get('/budgets', { params }),
+  createOrUpdateBudget: (data) => instance.post('/budgets', data),
+  deleteBudget: (id) => instance.delete(`/budgets/${id}`),
+
+  // AI Insights
+  getInsights: (params) => instance.post('/insights', null, { params }),
+
+  // Savings
+  getSavings: (params) => instance.get('/savings', { params }),
 };
 
 export const formatINR = (value) =>
