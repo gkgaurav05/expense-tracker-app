@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Receipt, PiggyBank, Sparkles, BarChart3, Share2, LogOut, TrendingUp, Wallet } from 'lucide-react';
+import { LayoutDashboard, Receipt, PiggyBank, LogOut } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/context/AuthContext';
 
@@ -7,10 +7,6 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/budgets', icon: PiggyBank, label: 'Budgets' },
-  { to: '/savings', icon: Wallet, label: 'Savings' },
-  { to: '/summary', icon: BarChart3, label: 'Summary' },
-  { to: '/reports', icon: Share2, label: 'Reports' },
-  { to: '/insights', icon: Sparkles, label: 'Insights' },
 ];
 
 export default function Sidebar() {

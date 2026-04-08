@@ -7,10 +7,6 @@ import Sidebar from "@/components/Sidebar";
 import Dashboard from "@/pages/Dashboard";
 import Expenses from "@/pages/Expenses";
 import Budgets from "@/pages/Budgets";
-import Insights from "@/pages/Insights";
-import Summary from "@/pages/Summary";
-import Reports from "@/pages/Reports";
-import Savings from "@/pages/Savings";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 
@@ -49,10 +45,6 @@ function AppRoutes() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/expenses" element={<Expenses />} />
                   <Route path="/budgets" element={<Budgets />} />
-                  <Route path="/savings" element={<Savings />} />
-                  <Route path="/summary" element={<Summary />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/insights" element={<Insights />} />
                 </Routes>
               </main>
             </div>
