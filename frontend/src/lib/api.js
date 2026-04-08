@@ -38,6 +38,21 @@ export const api = {
   createExpense: (data) => instance.post('/expenses', data),
   updateExpense: (id, data) => instance.put(`/expenses/${id}`, data),
   deleteExpense: (id) => instance.delete(`/expenses/${id}`),
+  uploadStatement: (file, useAI = false, password = null) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    let url = `/expenses/upload?use_ai=${useAI}`;
+    if (password) {
+      url += `&password=${encodeURIComponent(password)}`;
+    }
+    return instance.post(url, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  createBulkExpenses: (expenses) => instance.post('/expenses/bulk', expenses),
+  categorizeTransactions: (transactions) => instance.post('/expenses/categorize', transactions),
+  getPayeeMappings: () => instance.get('/expenses/payee-mappings'),
+  applyPayeeMappings: (transactions) => instance.post('/expenses/apply-mappings', transactions),
 
   // Categories
   getCategories: () => instance.get('/categories'),

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Trash2, Receipt, Filter, Pencil, Download, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { Plus, Trash2, Receipt, Filter, Pencil, Download, ChevronLeft, ChevronRight, CalendarDays, Upload } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
 import { format, addMonths, subMonths } from 'date-fns';
 import AddExpenseModal from '@/components/AddExpenseModal';
+import UploadStatementModal from '@/components/UploadStatementModal';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
 
@@ -14,6 +16,7 @@ export default function Expenses() {
   const [categories, setCategories] = useState([]);
   const [filter, setFilter] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -89,22 +92,45 @@ export default function Expenses() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-['General_Sans']">Expenses</h1>
           <p className="text-sm text-[#A1A1AA] mt-1">{expenses.length} transactions</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            data-testid="export-csv-btn"
-            onClick={handleExportCSV}
-            className="rounded-full bg-white/[0.05] border border-white/[0.08] px-5 h-12 flex items-center gap-2 text-sm text-[#A1A1AA] hover:bg-white/[0.1] transition-all"
-          >
-            <Download size={16} /> Export CSV
-          </button>
-          <button
-            data-testid="add-expense-btn"
-            onClick={() => { setEditingExpense(null); setModalOpen(true); }}
-            className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-6 h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
-          >
-            <Plus size={18} strokeWidth={2.5} /> Add Expense
-          </button>
-        </div>
+        <TooltipProvider delayDuration={0}>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  data-testid="upload-statement-btn"
+                  onClick={() => setUploadModalOpen(true)}
+                  className="w-12 h-12 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
+                >
+                  <Upload size={18} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-[#171717] border-white/10 text-white">
+                Import Bank Statement
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  data-testid="export-csv-btn"
+                  onClick={handleExportCSV}
+                  className="w-12 h-12 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
+                >
+                  <Download size={18} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-[#171717] border-white/10 text-white">
+                Export CSV
+              </TooltipContent>
+            </Tooltip>
+            <button
+              data-testid="add-expense-btn"
+              onClick={() => { setEditingExpense(null); setModalOpen(true); }}
+              className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-6 h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
+            >
+              <Plus size={18} strokeWidth={2.5} /> Add
+            </button>
+          </div>
+        </TooltipProvider>
       </motion.div>
 
       {/* Month Navigator */}
@@ -220,6 +246,13 @@ export default function Expenses() {
         categories={categories}
         onSuccess={fetchData}
         expense={editingExpense}
+      />
+
+      <UploadStatementModal
+        open={uploadModalOpen}
+        onOpenChange={setUploadModalOpen}
+        categories={categories}
+        onSuccess={fetchData}
       />
     </div>
   );

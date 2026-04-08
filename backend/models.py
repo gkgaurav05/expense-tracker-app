@@ -19,6 +19,7 @@ class ExpenseCreate(BaseModel):
     category: str
     description: str = ""
     date: str
+    type: str = "expense"  # "expense" or "income"
 
 
 class BudgetCreate(BaseModel):
