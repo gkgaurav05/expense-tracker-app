@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional
 from datetime import datetime, timezone
 import calendar
@@ -14,9 +14,14 @@ router = APIRouter()
 
 
 @router.post("/insights")
-async def get_ai_insights(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def get_ai_insights(
+    month: Optional[str] = Query(None, description="Month in YYYY-MM format"),
+    current_user: dict = Depends(get_current_user)
+):
     now = datetime.now(timezone.utc)
     user_id = current_user["id"]
+
+    logger.info(f"AI Insights request - user: {user_id}, month param: {month}")
 
     # Determine target month
     if month:
@@ -26,27 +31,29 @@ async def get_ai_insights(month: Optional[str] = None, current_user: dict = Depe
         except ValueError:
             raise HTTPException(400, "Invalid month format. Use YYYY-MM")
         month_start = f"{year}-{m:02d}-01"
-        if m == 12:
-            month_end = f"{year + 1}-01-01"
-        else:
-            month_end = f"{year}-{m + 1:02d}-01"
+        # Calculate last day of month for inclusive end date
+        last_day = calendar.monthrange(year, m)[1]
+        month_end = f"{year}-{m:02d}-{last_day}"
         target_month = month
     else:
         year, m = now.year, now.month
-        month_start = now.replace(day=1).strftime("%Y-%m-%d")
-        if m == 12:
-            month_end = f"{year + 1}-01-01"
-        else:
-            month_end = f"{year}-{m + 1:02d}-01"
+        month_start = f"{year}-{m:02d}-01"
+        last_day = calendar.monthrange(year, m)[1]
+        month_end = f"{year}-{m:02d}-{last_day}"
         target_month = now.strftime("%Y-%m")
 
-    # Fetch expenses for the selected month
+    logger.info(f"Querying expenses from {month_start} to {month_end} for month {target_month}")
+
+    # Fetch expenses for the selected month (use $lte for inclusive end date)
     expenses = await db.expenses.find(
-        {"user_id": user_id, "date": {"$gte": month_start, "$lt": month_end}}, {"_id": 0}
+        {"user_id": user_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}
     ).sort("date", -1).to_list(10000)
+
+    logger.info(f"Found {len(expenses)} expenses for {target_month}")
 
     # Fetch budgets for the selected month
     budgets = await db.budgets.find({"user_id": user_id, "month": target_month}, {"_id": 0}).to_list(100)
+    logger.info(f"Found {len(budgets)} budgets for {target_month}")
 
     if not expenses:
         return {"insights": f"No expenses found for {target_month}. Add some expenses first to get AI-powered insights!"}
@@ -57,9 +64,10 @@ async def get_ai_insights(month: Optional[str] = None, current_user: dict = Depe
     else:
         prev_year, prev_m = year, m - 1
     prev_start = f"{prev_year}-{prev_m:02d}-01"
-    prev_end = f"{year}-{m:02d}-01"
+    prev_last_day = calendar.monthrange(prev_year, prev_m)[1]
+    prev_end = f"{prev_year}-{prev_m:02d}-{prev_last_day}"
     prev_expenses = await db.expenses.find(
-        {"user_id": user_id, "date": {"$gte": prev_start, "$lt": prev_end}}, {"_id": 0}
+        {"user_id": user_id, "date": {"$gte": prev_start, "$lte": prev_end}}, {"_id": 0}
     ).to_list(10000)
 
     prev_total = sum(e["amount"] for e in prev_expenses)

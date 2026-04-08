@@ -74,6 +74,25 @@ api_router.include_router(savings.router)
 async def root():
     return {"message": "Spendrax API"}
 
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint for load balancers and monitoring."""
+    try:
+        # Check MongoDB connection
+        await client.admin.command('ping')
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
 app.include_router(api_router)
 
 # ── CORS ────────────────────────────────────────────────────────────

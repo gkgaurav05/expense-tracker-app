@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { PiggyBank, Save, Trash2, ChevronLeft, ChevronRight, CalendarDays, Target, Wallet, TrendingUp, Clock } from 'lucide-react';
+import { PiggyBank, Save, Trash2, ChevronLeft, ChevronRight, CalendarDays, Target, Wallet, TrendingUp, TrendingDown, Clock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
 import { format, addMonths, subMonths, getDaysInMonth, getDate } from 'date-fns';
@@ -9,12 +10,18 @@ import { format, addMonths, subMonths, getDaysInMonth, getDate } from 'date-fns'
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
 
 export default function Budgets() {
+  const [activeTab, setActiveTab] = useState('current'); // 'current' or 'performance'
   const [categories, setCategories] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [spending, setSpending] = useState({});
   const [budgetInputs, setBudgetInputs] = useState({});
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Performance tab state
+  const [performanceData, setPerformanceData] = useState(null);
+  const [performanceMonths, setPerformanceMonths] = useState(6);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
 
   const monthStr = format(currentDate, 'yyyy-MM');
   const monthLabel = format(currentDate, 'MMMM yyyy');
@@ -54,6 +61,25 @@ export default function Budgets() {
   }, [monthStr]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Fetch performance/savings data
+  const fetchPerformanceData = useCallback(async () => {
+    setPerformanceLoading(true);
+    try {
+      const { data } = await api.getSavings({ months: performanceMonths });
+      setPerformanceData(data);
+    } catch (e) {
+      console.error('Failed to fetch performance data', e);
+    } finally {
+      setPerformanceLoading(false);
+    }
+  }, [performanceMonths]);
+
+  useEffect(() => {
+    if (activeTab === 'performance') {
+      fetchPerformanceData();
+    }
+  }, [activeTab, fetchPerformanceData]);
 
   const handleSave = async (categoryName) => {
     const val = parseFloat(budgetInputs[categoryName]);
@@ -104,26 +130,38 @@ export default function Budgets() {
     <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-['General_Sans']">Budgets</h1>
-        <p className="text-sm text-[#A1A1AA] mt-1">Set monthly spending limits per category</p>
+        <p className="text-sm text-[#A1A1AA] mt-1">
+          {activeTab === 'current' ? 'Set monthly spending limits per category' : 'Track your budget performance over time'}
+        </p>
       </motion.div>
 
-      {/* Month Navigator */}
-      <div className="flex items-center gap-4">
-        <button onClick={() => setCurrentDate((d) => subMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
-          <ChevronLeft size={18} />
-        </button>
-        <span className="text-lg font-semibold font-['General_Sans'] flex items-center gap-2">
-          <CalendarDays size={16} className="text-[#FDE047]" /> {monthLabel}
-        </span>
-        <button onClick={() => setCurrentDate((d) => addMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
-          <ChevronRight size={18} />
-        </button>
-        {!isCurrentMonth && (
-          <button onClick={() => setCurrentDate(new Date())} className="text-xs text-[#FDE047] font-semibold hover:underline ml-2">
-            Back to Current Month
-          </button>
-        )}
-      </div>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-white/[0.05] border border-white/[0.08] rounded-full p-1 w-fit">
+          <TabsTrigger value="current" className="rounded-full px-5 data-[state=active]:bg-[#FDE047] data-[state=active]:text-[#0A0A0A] text-[#A1A1AA] font-semibold text-sm">This Month</TabsTrigger>
+          <TabsTrigger value="performance" className="rounded-full px-5 data-[state=active]:bg-[#FDE047] data-[state=active]:text-[#0A0A0A] text-[#A1A1AA] font-semibold text-sm">Performance</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {activeTab === 'current' && (
+        <>
+          {/* Month Navigator */}
+          <div className="flex items-center gap-4">
+            <button onClick={() => setCurrentDate((d) => subMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
+              <ChevronLeft size={18} />
+            </button>
+            <span className="text-lg font-semibold font-['General_Sans'] flex items-center gap-2">
+              <CalendarDays size={16} className="text-[#FDE047]" /> {monthLabel}
+            </span>
+            <button onClick={() => setCurrentDate((d) => addMonths(d, 1))} className="w-10 h-10 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] transition-all">
+              <ChevronRight size={18} />
+            </button>
+            {!isCurrentMonth && (
+              <button onClick={() => setCurrentDate(new Date())} className="text-xs text-[#FDE047] font-semibold hover:underline ml-2">
+                Back to Current Month
+              </button>
+            )}
+          </div>
 
       {/* Month Summary Card */}
       {totalBudget > 0 && (
@@ -314,6 +352,219 @@ export default function Budgets() {
           <PiggyBank size={40} className="mx-auto text-[#A1A1AA] mb-4" />
           <p className="text-[#A1A1AA]">No categories found</p>
         </div>
+      )}
+        </>
+      )}
+
+      {/* Performance Tab */}
+      {activeTab === 'performance' && (
+        <>
+          {/* Period Selector */}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-[#A1A1AA]">Analyze last</span>
+            <div className="flex gap-2">
+              {[3, 6, 12].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setPerformanceMonths(m)}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+                    performanceMonths === m
+                      ? 'bg-[#FDE047] text-[#0A0A0A]'
+                      : 'bg-white/[0.05] border border-white/[0.08] text-[#A1A1AA] hover:bg-white/[0.1]'
+                  }`}
+                >
+                  {m} months
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {performanceLoading ? (
+            <div className="flex justify-center py-20">
+              <div className="w-8 h-8 rounded-full border-2 border-[#FDE047] border-t-transparent animate-spin" />
+            </div>
+          ) : performanceData ? (
+            <div className="space-y-6">
+              {/* Overview Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Budget', value: formatINR(performanceData.total_budget), icon: Target, color: 'text-[#FDE047]' },
+                  { label: 'Total Spent', value: formatINR(performanceData.total_spent), icon: Wallet, color: 'text-[#FDE047]' },
+                  {
+                    label: 'Total Saved',
+                    value: formatINR(Math.abs(performanceData.total_saved)),
+                    prefix: performanceData.total_saved >= 0 ? '+' : '-',
+                    icon: performanceData.total_saved >= 0 ? ArrowUpRight : ArrowDownRight,
+                    color: performanceData.total_saved >= 0 ? 'text-green-400' : 'text-red-400'
+                  },
+                  {
+                    label: 'Savings Rate',
+                    value: `${Math.abs(performanceData.savings_rate)}%`,
+                    prefix: performanceData.savings_rate >= 0 ? '' : '-',
+                    icon: performanceData.savings_rate >= 0 ? TrendingUp : TrendingDown,
+                    color: performanceData.savings_rate >= 0 ? 'text-green-400' : 'text-red-400'
+                  },
+                ].map((stat, i) => (
+                  <motion.div key={stat.label} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: i * 0.05 }} className="glass-card-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <stat.icon size={14} className={stat.color} />
+                      <span className="text-xs uppercase tracking-[0.15em] font-semibold text-[#A1A1AA]">{stat.label}</span>
+                    </div>
+                    <p className={`font-bold font-['General_Sans'] text-xl ${stat.color}`}>
+                      {stat.prefix || ''}{stat.value}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Period Info */}
+              <p className="text-sm text-[#A1A1AA]">
+                Analyzing: <span className="text-white font-medium">{performanceData.period}</span> ({performanceData.months_analyzed} months)
+              </p>
+
+              {/* Monthly Breakdown & Category Summary */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Monthly Breakdown */}
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.2 }} className="glass-card">
+                  <p className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA] mb-4">Monthly Performance</p>
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                    {performanceData.monthly_breakdown?.map((m, idx) => (
+                      <motion.div
+                        key={m.month}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.3 + idx * 0.05 }}
+                        className="border-b border-white/[0.06] pb-4 last:border-0 last:pb-0"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-white">{m.month}</span>
+                          <span className={`font-bold text-lg ${m.total_saved >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {m.total_saved >= 0 ? '+' : ''}{formatINR(m.total_saved)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-[#A1A1AA] mb-2">
+                          <span>Budget: {formatINR(m.total_budget)}</span>
+                          <span>•</span>
+                          <span>Spent: {formatINR(m.total_spent)}</span>
+                        </div>
+                        <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.min((m.total_spent / m.total_budget) * 100, 100)}%`,
+                              background: m.total_saved >= 0 ? '#4ade80' : '#f87171'
+                            }}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {m.categories?.slice(0, 3).map((c) => (
+                            <span
+                              key={c.category}
+                              className={`text-xs px-2 py-0.5 rounded-full ${c.saved >= 0 ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}
+                            >
+                              {c.category.split(' ')[0]}: {c.saved >= 0 ? '+' : ''}{formatINR(c.saved)}
+                            </span>
+                          ))}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+
+                {/* Category Summary */}
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.25 }} className="glass-card">
+                  <p className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA] mb-4">Category Savings ({performanceData.months_analyzed} months)</p>
+                  <div className="space-y-4">
+                    {performanceData.category_summary?.map((c, idx) => (
+                      <motion.div
+                        key={c.category}
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.3 + idx * 0.05 }}
+                      >
+                        <div className="flex justify-between text-sm mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />
+                            <span className="text-white font-medium">{c.category}</span>
+                          </div>
+                          <span className={`font-bold ${c.saved >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {c.saved >= 0 ? '+' : ''}{formatINR(c.saved)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-[#A1A1AA] mb-1.5">
+                          <span>Budget: {formatINR(c.budget)}</span>
+                          <span>•</span>
+                          <span>Spent: {formatINR(c.spent)}</span>
+                          <span>•</span>
+                          <span>{Math.round((c.spent / c.budget) * 100)}% used</span>
+                        </div>
+                        <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.min((c.spent / c.budget) * 100, 100)}%`,
+                              background: c.saved >= 0 ? c.color : '#f87171'
+                            }}
+                          />
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Motivational Card */}
+              {performanceData.total_saved > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ ...spring, delay: 0.4 }}
+                  className="glass-card bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                      <PiggyBank size={24} className="text-green-400" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-green-400">Great job! You're under budget.</p>
+                      <p className="text-sm text-[#A1A1AA]">
+                        You've saved {formatINR(performanceData.total_saved)} over the last {performanceData.months_analyzed} months.
+                        That's a {performanceData.savings_rate}% savings rate!
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {performanceData.total_saved < 0 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ ...spring, delay: 0.4 }}
+                  className="glass-card bg-gradient-to-r from-red-500/10 to-orange-500/10 border-red-500/20"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                      <TrendingDown size={24} className="text-red-400" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-red-400">You're over budget</p>
+                      <p className="text-sm text-[#A1A1AA]">
+                        You've overspent by {formatINR(Math.abs(performanceData.total_saved))} over the last {performanceData.months_analyzed} months.
+                        Check which categories need attention.
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          ) : (
+            <div className="glass-card text-center py-16">
+              <PiggyBank size={48} className="mx-auto text-[#A1A1AA]/40 mb-4" />
+              <p className="text-[#A1A1AA]">No savings data available. Add budgets and expenses to start tracking.</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
