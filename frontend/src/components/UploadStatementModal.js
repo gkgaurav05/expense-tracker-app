@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileSpreadsheet, AlertTriangle, Check, Sparkles, Loader2, Trash2, CheckSquare, Square, Zap, ArrowDownLeft, ArrowUpRight, Filter, CheckCircle2, Circle, Clock } from 'lucide-react';
+import { Upload, FileSpreadsheet, AlertTriangle, Check, Sparkles, Loader2, Trash2, CheckSquare, Square, Zap, ArrowDownLeft, ArrowUpRight, CheckCircle2, Circle, Clock, RotateCcw, Copy } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -143,6 +143,8 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
   const [elapsedTime, setElapsedTime] = useState(0);
   const [processingWithAI, setProcessingWithAI] = useState(false);
   const [pdfPassword, setPdfPassword] = useState('');
+  const [activeTab, setActiveTab] = useState('expenses'); // 'expenses' | 'income'
+  const [excludedIndices, setExcludedIndices] = useState(new Set()); // Tracks unchecked items
   const fileInputRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -163,6 +165,8 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     setElapsedTime(0);
     setProcessingWithAI(false);
     setPdfPassword('');
+    setActiveTab('expenses');
+    setExcludedIndices(new Set());
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -274,11 +278,23 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
       }
 
       setTransactions(txns);
+
+      // Auto-exclude income transactions, reversal pairs, and duplicates by default
+      const autoExcludeIndices = new Set();
+      txns.forEach((t, idx) => {
+        if (t.type === 'income' || t.is_reversal || t.is_duplicate) {
+          autoExcludeIndices.add(idx);
+        }
+      });
+      setExcludedIndices(autoExcludeIndices);
+
       setStep('preview');
       setProcessingStep(null);
 
+      const incomeCount = txns.filter(t => t.type === 'income').length;
+      const expenseCount = txns.length - incomeCount;
       const autoMsg = autoAppliedCount > 0 ? ` (${autoAppliedCount} auto-categorized)` : '';
-      toast.success(`Found ${data.count} transactions${data.used_ai ? ' via AI' : ''}${autoMsg}`);
+      toast.success(`Found ${expenseCount} expenses${incomeCount > 0 ? ` and ${incomeCount} income` : ''}${data.used_ai ? ' via AI' : ''}${autoMsg}`);
     } catch (err) {
       // Clear timer
       if (timerRef.current) {
@@ -455,11 +471,16 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
   };
 
   const handleImport = async () => {
-    if (transactions.length === 0) return;
+    // Only import transactions that are not excluded
+    const toImport = transactions.filter((_, idx) => !excludedIndices.has(idx));
+    if (toImport.length === 0) {
+      toast.error('No transactions selected for import');
+      return;
+    }
     setImporting(true);
 
     try {
-      const expenses = transactions.map(t => ({
+      const expenses = toImport.map(t => ({
         amount: t.amount,
         category: t.category,
         description: t.description,
@@ -467,8 +488,15 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
         type: t.type || 'expense'
       }));
       const { data } = await api.createBulkExpenses(expenses);
-      const learnedMsg = data.learned_mappings > 0 ? ` (learned ${data.learned_mappings} payee mappings)` : '';
-      toast.success(`Imported ${data.created} transactions${learnedMsg}`);
+      // Build toast message with all relevant info
+      let toastMsg = `Imported ${data.created} transactions`;
+      if (data.skipped_duplicates > 0) {
+        toastMsg += ` • ${data.skipped_duplicates} duplicates skipped`;
+      }
+      if (data.learned_mappings > 0) {
+        toastMsg += ` • learned ${data.learned_mappings} payee mappings`;
+      }
+      toast.success(toastMsg);
       handleClose();
       onSuccess?.();
     } catch (err) {
@@ -478,12 +506,74 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     }
   };
 
-  const totalExpenses = transactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
-  const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const expenseCount = transactions.filter(t => t.type !== 'income').length;
-  const incomeCount = transactions.filter(t => t.type === 'income').length;
-  const likelyCreditCount = transactions.filter(t => t.likely_credit && t.type !== 'income').length;
+  // Separate expenses and income with their original indices
+  const expenseTransactions = useMemo(() => {
+    return transactions.map((t, idx) => ({ ...t, originalIdx: idx })).filter(t => t.type !== 'income');
+  }, [transactions]);
+
+  const incomeTransactions = useMemo(() => {
+    return transactions.map((t, idx) => ({ ...t, originalIdx: idx })).filter(t => t.type === 'income');
+  }, [transactions]);
+
+  // Calculate totals for included (not excluded) transactions
+  const includedExpenses = expenseTransactions.filter(t => !excludedIndices.has(t.originalIdx));
+  const includedIncome = incomeTransactions.filter(t => !excludedIndices.has(t.originalIdx));
+
+  const totalExpenses = includedExpenses.reduce((sum, t) => sum + t.amount, 0);
+  const totalIncome = includedIncome.reduce((sum, t) => sum + t.amount, 0);
+  const expenseCount = expenseTransactions.length;
+  const incomeCount = incomeTransactions.length;
+  const includedExpenseCount = includedExpenses.length;
+  const includedIncomeCount = includedIncome.length;
+  const totalIncludedCount = includedExpenseCount + includedIncomeCount;
+  const likelyCreditCount = expenseTransactions.filter(t => t.likely_credit).length;
+  const reversalCount = transactions.filter(t => t.is_reversal).length;
+  const duplicateCount = transactions.filter(t => t.is_duplicate).length;
   const categoryOptions = categories.map(c => c.name);
+
+  // Toggle include/exclude for a transaction
+  const toggleInclude = (originalIdx) => {
+    setExcludedIndices(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(originalIdx)) {
+        newSet.delete(originalIdx);
+      } else {
+        newSet.add(originalIdx);
+      }
+      return newSet;
+    });
+  };
+
+  // Select/deselect all in a section
+  const toggleAllExpenses = () => {
+    const allExcluded = expenseTransactions.every(t => excludedIndices.has(t.originalIdx));
+    setExcludedIndices(prev => {
+      const newSet = new Set(prev);
+      expenseTransactions.forEach(t => {
+        if (allExcluded) {
+          newSet.delete(t.originalIdx);
+        } else {
+          newSet.add(t.originalIdx);
+        }
+      });
+      return newSet;
+    });
+  };
+
+  const toggleAllIncome = () => {
+    const allExcluded = incomeTransactions.every(t => excludedIndices.has(t.originalIdx));
+    setExcludedIndices(prev => {
+      const newSet = new Set(prev);
+      incomeTransactions.forEach(t => {
+        if (allExcluded) {
+          newSet.delete(t.originalIdx);
+        } else {
+          newSet.add(t.originalIdx);
+        }
+      });
+      return newSet;
+    });
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -715,44 +805,63 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
 
         {step === 'preview' && (
           <div className="flex flex-col flex-1 overflow-hidden space-y-3 py-4">
-            {/* Summary Bar */}
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20">
-                  <ArrowUpRight size={14} className="text-red-400" />
-                  <div>
-                    <p className="text-[10px] text-red-300">Expenses</p>
-                    <p className="font-bold text-sm text-red-400">{formatINR(totalExpenses)} <span className="text-[10px] font-normal">({expenseCount})</span></p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <ArrowDownLeft size={14} className="text-green-400" />
-                  <div>
-                    <p className="text-[10px] text-green-300">Income</p>
-                    <p className="font-bold text-sm text-green-400">{formatINR(totalIncome)} <span className="text-[10px] font-normal">({incomeCount})</span></p>
-                  </div>
+            {/* Summary Banner */}
+            <div className="p-4 rounded-xl bg-gradient-to-r from-[#FDE047]/10 to-green-500/10 border border-white/[0.1]">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-white flex items-center gap-2">
+                  <FileSpreadsheet size={16} className="text-[#FDE047]" />
+                  Found {expenseCount + incomeCount} transactions
+                </p>
+                <div className="flex items-center gap-2">
+                  <Checkbox id="ai-categorize" checked={useAI} onCheckedChange={setUseAI} className="border-white/20 data-[state=checked]:bg-[#FDE047] data-[state=checked]:border-[#FDE047]" />
+                  <label htmlFor="ai-categorize" className="text-xs text-[#A1A1AA] cursor-pointer flex items-center gap-1">
+                    <Sparkles size={12} className="text-[#FDE047]" /> AI Categorize
+                  </label>
+                  {useAI && (
+                    <button onClick={handleAICategorize} disabled={aiLoading} className="text-xs px-3 py-1 rounded-full bg-[#FDE047]/20 text-[#FDE047] font-semibold">
+                      {aiLoading ? <Loader2 size={12} className="animate-spin" /> : 'Run'}
+                    </button>
+                  )}
                 </div>
               </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox id="ai-categorize" checked={useAI} onCheckedChange={setUseAI} className="border-white/20 data-[state=checked]:bg-[#FDE047] data-[state=checked]:border-[#FDE047]" />
-                <label htmlFor="ai-categorize" className="text-xs text-[#A1A1AA] cursor-pointer flex items-center gap-1">
-                  <Sparkles size={12} className="text-[#FDE047]" /> AI
-                </label>
-                {useAI && (
-                  <button onClick={handleAICategorize} disabled={aiLoading} className="text-xs px-3 py-1 rounded-full bg-[#FDE047]/20 text-[#FDE047] font-semibold">
-                    {aiLoading ? <Loader2 size={12} className="animate-spin" /> : 'Run'}
-                  </button>
-                )}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.05]">
+                  <ArrowUpRight size={14} className="text-red-400" />
+                  <span className="text-xs text-[#A1A1AA]">Expenses:</span>
+                  <span className="text-sm font-bold text-white">{expenseCount}</span>
+                  <span className="text-xs text-[#A1A1AA]">({formatINR(expenseTransactions.reduce((s, t) => s + t.amount, 0))})</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.05]">
+                  <ArrowDownLeft size={14} className="text-green-400" />
+                  <span className="text-xs text-[#A1A1AA]">Income:</span>
+                  <span className="text-sm font-bold text-green-400">{incomeCount}</span>
+                  <span className="text-xs text-[#A1A1AA]">(+{formatINR(incomeTransactions.reduce((s, t) => s + t.amount, 0))})</span>
+                </div>
               </div>
             </div>
 
             {/* Warnings */}
+            {duplicateCount > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                <Copy size={14} className="text-orange-400" />
+                <p className="text-xs text-orange-300">
+                  <strong>{duplicateCount}</strong> duplicate{duplicateCount !== 1 ? 's' : ''} found (already in your records). Auto-excluded to prevent re-importing.
+                </p>
+              </div>
+            )}
+            {reversalCount > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                <RotateCcw size={14} className="text-purple-400" />
+                <p className="text-xs text-purple-300">
+                  <strong>{reversalCount}</strong> likely reversal{reversalCount !== 1 ? 's' : ''} detected (same-day debit-credit pairs). Auto-excluded to avoid double counting.
+                </p>
+              </div>
+            )}
             {likelyCreditCount > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <AlertTriangle size={14} className="text-amber-400" />
                 <p className="text-xs text-amber-300">
-                  <strong>{likelyCreditCount}</strong> transactions look like income/credits. Review items with <span className="text-amber-400">amber border</span>.
+                  <strong>{likelyCreditCount}</strong> expense{likelyCreditCount !== 1 ? 's' : ''} look like income. Items marked with <span className="text-amber-400">amber</span> may need review.
                 </p>
               </div>
             )}
@@ -760,163 +869,251 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
             {autoAppliedCount > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
                 <Zap size={14} className="text-green-400" />
-                <p className="text-xs text-green-300"><strong>{autoAppliedCount}</strong> auto-categorized from history</p>
+                <p className="text-xs text-green-300"><strong>{autoAppliedCount}</strong> auto-categorized from your history</p>
               </div>
             )}
 
-            {/* Filters */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter size={14} className="text-[#A1A1AA]" />
-
-              {/* Type filter */}
-              <div className="flex rounded-lg overflow-hidden border border-white/10">
-                {['all', 'expense', 'income'].map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setTypeFilter(t)}
-                    className={`px-3 py-1 text-xs font-medium transition-all ${
-                      typeFilter === t ? 'bg-[#FDE047] text-[#0A0A0A]' : 'bg-white/[0.03] text-[#A1A1AA] hover:bg-white/[0.08]'
-                    }`}
-                  >
-                    {t === 'all' ? 'All' : t === 'expense' ? 'Expenses' : 'Income'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Amount filter */}
-              <Select value={amountFilter} onValueChange={setAmountFilter}>
-                <SelectTrigger className="h-7 w-28 text-xs bg-white/[0.03] border-white/10 rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#171717] border-white/10 text-white">
-                  {AMOUNT_FILTERS.map(f => (
-                    <SelectItem key={f.value} value={f.value} className="text-xs focus:bg-white/10">{f.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <span className="text-xs text-[#A1A1AA]">Showing {filteredTransactions.length} of {transactions.length}</span>
+            {/* Tabs */}
+            <div className="flex gap-1 p-1 rounded-xl bg-white/[0.05]">
+              <button
+                onClick={() => setActiveTab('expenses')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  activeTab === 'expenses'
+                    ? 'bg-[#FDE047] text-[#0A0A0A]'
+                    : 'text-[#A1A1AA] hover:text-white hover:bg-white/[0.05]'
+                }`}
+              >
+                <ArrowUpRight size={16} className={activeTab === 'expenses' ? 'text-red-600' : 'text-red-400'} />
+                Expenses ({expenseCount})
+              </button>
+              <button
+                onClick={() => setActiveTab('income')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  activeTab === 'income'
+                    ? 'bg-green-500 text-white'
+                    : 'text-[#A1A1AA] hover:text-white hover:bg-white/[0.05]'
+                }`}
+              >
+                <ArrowDownLeft size={16} className={activeTab === 'income' ? 'text-white' : 'text-green-400'} />
+                Income ({incomeCount})
+              </button>
             </div>
 
-            {/* Bulk Actions */}
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-              <button onClick={selectAllFiltered} className="flex items-center gap-1.5 text-xs text-[#A1A1AA] hover:text-white px-2 py-1">
-                {filteredIndices.every(i => selectedIndices.has(i)) && filteredIndices.length > 0 ? <CheckSquare size={14} className="text-[#FDE047]" /> : <Square size={14} />}
-                {selectedIndices.size > 0 ? `${selectedIndices.size} selected` : 'Select'}
-              </button>
-
-              {selectedIndices.size > 0 && (
+            {/* Transactions List - Scrollable */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2 min-h-0">
+              {/* EXPENSES TAB */}
+              {activeTab === 'expenses' && (
                 <>
-                  <div className="h-4 w-px bg-white/10" />
-                  <Select value={bulkCategory} onValueChange={setBulkCategory}>
-                    <SelectTrigger className="h-6 w-28 text-[10px] bg-white/[0.05] border-white/10 rounded">
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#171717] border-white/10 text-white">
-                      {categoryOptions.map(cat => (
-                        <SelectItem key={cat} value={cat} className="text-xs focus:bg-white/10">{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <button onClick={applyBulkCategory} disabled={!bulkCategory} className="text-[10px] px-2 py-1 rounded bg-[#FDE047] text-[#0A0A0A] font-semibold disabled:opacity-50">Apply</button>
-                  <button onClick={markSelectedAsIncome} className="text-[10px] px-2 py-1 rounded bg-green-500/20 text-green-400 font-semibold">Income</button>
-                  <button onClick={removeSelected} className="text-[10px] px-2 py-1 rounded bg-red-500/20 text-red-400 font-semibold">Remove</button>
+                  {expenseTransactions.length === 0 ? (
+                    <div className="text-center py-8 text-[#A1A1AA]">
+                      <ArrowUpRight size={32} className="mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No expense transactions found</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between sticky top-0 bg-[#171717] py-2 z-10">
+                        <button
+                          onClick={toggleAllExpenses}
+                          className="flex items-center gap-2 text-xs text-[#A1A1AA] hover:text-white transition-colors"
+                        >
+                          {expenseTransactions.every(t => !excludedIndices.has(t.originalIdx)) ? (
+                            <CheckSquare size={14} className="text-[#FDE047]" />
+                          ) : expenseTransactions.some(t => !excludedIndices.has(t.originalIdx)) ? (
+                            <CheckSquare size={14} className="text-[#FDE047]/50" />
+                          ) : (
+                            <Square size={14} className="text-[#A1A1AA]" />
+                          )}
+                          {expenseTransactions.every(t => !excludedIndices.has(t.originalIdx)) ? 'Deselect all' : 'Select all'}
+                        </button>
+                        <p className="text-sm font-bold text-white">
+                          {includedExpenseCount} selected • {formatINR(totalExpenses)}
+                        </p>
+                      </div>
+
+                      {expenseTransactions.map((txn) => {
+                        const isIncluded = !excludedIndices.has(txn.originalIdx);
+                        const isLikelyCredit = txn.likely_credit;
+                        const isReversal = txn.is_reversal;
+                        const isDuplicate = txn.is_duplicate;
+
+                        return (
+                          <motion.div
+                            key={txn.originalIdx}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={`glass-card-sm flex items-center gap-2 cursor-pointer transition-all ${
+                              isIncluded ? '' : 'opacity-40'
+                            } ${isDuplicate ? 'border-orange-500/40 bg-orange-500/5' : isReversal ? 'border-purple-500/40 bg-purple-500/5' : isLikelyCredit ? 'border-amber-500/40 bg-amber-500/5' : ''}`}
+                            onClick={() => toggleInclude(txn.originalIdx)}
+                          >
+                            <div className="flex-shrink-0">
+                              {isIncluded ? <CheckSquare size={16} className="text-[#FDE047]" /> : <Square size={16} className="text-[#A1A1AA]" />}
+                            </div>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleTransactionType(txn.originalIdx); }}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all"
+                              title="Expense (click to mark as income)"
+                            >
+                              <ArrowUpRight size={14} />
+                            </button>
+
+                            <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex flex-col items-center justify-center leading-none flex-shrink-0">
+                              <span className="text-[10px] font-bold text-white">{txn.date?.slice(8)}</span>
+                              <span className="text-[8px] text-[#A1A1AA] uppercase">
+                                {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}
+                              </span>
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] text-[#A1A1AA] truncate" title={txn.description}>{txn.description || 'No description'}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <Select value={txn.category} onValueChange={(val) => updateTransaction(txn.originalIdx, 'category', val)}>
+                                  <SelectTrigger className="h-5 w-28 text-[9px] bg-white/[0.05] border-white/10 rounded" onClick={(e) => e.stopPropagation()}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-[#171717] border-white/10 text-white">
+                                    {categoryOptions.map(cat => (
+                                      <SelectItem key={cat} value={cat} className="text-xs focus:bg-white/10">{cat}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {txn.auto_categorized && <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 flex items-center gap-0.5"><Zap size={8} />Auto</span>}
+                                {isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 flex items-center gap-0.5"><Copy size={8} />Duplicate</span>}
+                                {isReversal && !isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 flex items-center gap-0.5"><RotateCcw size={8} />Reversal</span>}
+                                {isLikelyCredit && !isReversal && !isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">Income?</span>}
+                              </div>
+                            </div>
+
+                            <p className="font-bold text-sm flex-shrink-0 text-white">{formatINR(txn.amount)}</p>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removeTransaction(txn.originalIdx); }}
+                              className="w-6 h-6 rounded bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 flex-shrink-0"
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          </motion.div>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* INCOME TAB */}
+              {activeTab === 'income' && (
+                <>
+                  {incomeTransactions.length === 0 ? (
+                    <div className="text-center py-8 text-[#A1A1AA]">
+                      <ArrowDownLeft size={32} className="mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No income transactions found</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between sticky top-0 bg-[#171717] py-2 z-10">
+                        <button
+                          onClick={toggleAllIncome}
+                          className="flex items-center gap-2 text-xs text-[#A1A1AA] hover:text-white transition-colors"
+                        >
+                          {incomeTransactions.every(t => !excludedIndices.has(t.originalIdx)) ? (
+                            <CheckSquare size={14} className="text-green-400" />
+                          ) : incomeTransactions.some(t => !excludedIndices.has(t.originalIdx)) ? (
+                            <CheckSquare size={14} className="text-green-400/50" />
+                          ) : (
+                            <Square size={14} className="text-[#A1A1AA]" />
+                          )}
+                          {incomeTransactions.every(t => !excludedIndices.has(t.originalIdx)) ? 'Deselect all' : 'Select all'}
+                        </button>
+                        <p className="text-sm font-bold text-green-400">
+                          {includedIncomeCount} selected • +{formatINR(totalIncome)}
+                        </p>
+                      </div>
+
+                      <div className="mb-2 p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                        <p className="text-xs text-blue-300 flex items-center gap-2">
+                          <AlertTriangle size={12} />
+                          Income is excluded by default. Select items below to include them in import.
+                        </p>
+                      </div>
+
+                      {incomeTransactions.map((txn) => {
+                        const isIncluded = !excludedIndices.has(txn.originalIdx);
+                        const isReversal = txn.is_reversal;
+                        const isDuplicate = txn.is_duplicate;
+
+                        return (
+                          <motion.div
+                            key={txn.originalIdx}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={`glass-card-sm flex items-center gap-2 cursor-pointer transition-all ${
+                              isDuplicate ? 'border-orange-500/40 bg-orange-500/5' : isReversal ? 'border-purple-500/40 bg-purple-500/5' : 'border-green-500/30 bg-green-500/5'
+                            } ${isIncluded ? '' : 'opacity-40'}`}
+                            onClick={() => toggleInclude(txn.originalIdx)}
+                          >
+                            <div className="flex-shrink-0">
+                              {isIncluded ? <CheckSquare size={16} className="text-green-400" /> : <Square size={16} className="text-[#A1A1AA]" />}
+                            </div>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleTransactionType(txn.originalIdx); }}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-green-500/20 text-green-400 hover:bg-green-500/30 transition-all"
+                              title="Income (click to mark as expense)"
+                            >
+                              <ArrowDownLeft size={14} />
+                            </button>
+
+                            <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex flex-col items-center justify-center leading-none flex-shrink-0">
+                              <span className="text-[10px] font-bold text-white">{txn.date?.slice(8)}</span>
+                              <span className="text-[8px] text-[#A1A1AA] uppercase">
+                                {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}
+                              </span>
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] text-[#A1A1AA] truncate" title={txn.description}>{txn.description || 'No description'}</p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="text-[9px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">Income</span>
+                                {isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 flex items-center gap-0.5"><Copy size={8} />Duplicate</span>}
+                                {isReversal && !isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 flex items-center gap-0.5"><RotateCcw size={8} />Reversal</span>}
+                              </div>
+                            </div>
+
+                            <p className="font-bold text-sm flex-shrink-0 text-green-400">+{formatINR(txn.amount)}</p>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removeTransaction(txn.originalIdx); }}
+                              className="w-6 h-6 rounded bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 flex-shrink-0"
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          </motion.div>
+                        );
+                      })}
+                    </>
+                  )}
                 </>
               )}
             </div>
 
-            {/* Transactions List */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2 min-h-0">
-              {filteredTransactions.map((txn, filteredIdx) => {
-                const originalIdx = filteredIndices[filteredIdx];
-                const isIncome = txn.type === 'income';
-                const isLikelyCredit = txn.likely_credit && !isIncome;
-
-                return (
-                  <motion.div
-                    key={originalIdx}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(filteredIdx * 0.015, 0.3) }}
-                    className={`glass-card-sm flex items-center gap-2 cursor-pointer transition-all ${
-                      selectedIndices.has(originalIdx) ? 'ring-1 ring-[#FDE047]/50 bg-[#FDE047]/5' : ''
-                    } ${isLikelyCredit ? 'border-amber-500/40 bg-amber-500/5' : ''} ${isIncome ? 'border-green-500/30 bg-green-500/5' : ''}`}
-                    onClick={(e) => {
-                      if (e.target.closest('button') || e.target.closest('[role="combobox"]')) return;
-                      toggleSelect(originalIdx);
-                    }}
-                  >
-                    <div className="flex-shrink-0">
-                      {selectedIndices.has(originalIdx) ? <CheckSquare size={16} className="text-[#FDE047]" /> : <Square size={16} className="text-[#A1A1AA]" />}
-                    </div>
-
-                    {/* Type toggle */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleTransactionType(originalIdx); }}
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                        isIncome ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                      }`}
-                      title={isIncome ? 'Income (click to change)' : 'Expense (click to change)'}
-                    >
-                      {isIncome ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
-                    </button>
-
-                    <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex flex-col items-center justify-center leading-none flex-shrink-0">
-                      <span className="text-[10px] font-bold text-white">{txn.date?.slice(8)}</span>
-                      <span className="text-[8px] text-[#A1A1AA] uppercase">
-                        {new Date(txn.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[#A1A1AA] truncate" title={txn.description}>{txn.description || 'No description'}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {!isIncome && (
-                          <Select value={txn.category} onValueChange={(val) => updateTransaction(originalIdx, 'category', val)}>
-                            <SelectTrigger className="h-5 w-28 text-[9px] bg-white/[0.05] border-white/10 rounded">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-[#171717] border-white/10 text-white">
-                              {categoryOptions.map(cat => (
-                                <SelectItem key={cat} value={cat} className="text-xs focus:bg-white/10">{cat}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                        {isIncome && <span className="text-[9px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">Income</span>}
-                        {txn.auto_categorized && <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 flex items-center gap-0.5"><Zap size={8} />Auto</span>}
-                        {isLikelyCredit && <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">Check?</span>}
-                      </div>
-                    </div>
-
-                    <p className={`font-bold text-sm flex-shrink-0 ${isIncome ? 'text-green-400' : 'text-white'}`}>
-                      {isIncome ? '+' : ''}{formatINR(txn.amount)}
-                    </p>
-
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeTransaction(originalIdx); }}
-                      className="w-6 h-6 rounded bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 flex-shrink-0"
-                    >
-                      <Trash2 size={10} />
-                    </button>
-                  </motion.div>
-                );
-              })}
-            </div>
-
             {/* Actions */}
-            <div className="flex items-center justify-between pt-2 border-t border-white/[0.08]">
-              <button onClick={() => { setStep('upload'); setFile(null); setTransactions([]); setSelectedIndices(new Set()); }} className="text-sm text-[#A1A1AA] hover:text-white">
+            <div className="flex items-center justify-between pt-3 border-t border-white/[0.08]">
+              <button onClick={() => { setStep('upload'); setFile(null); setTransactions([]); setExcludedIndices(new Set()); }} className="text-sm text-[#A1A1AA] hover:text-white">
                 Different File
               </button>
               <div className="flex items-center gap-3">
                 <button onClick={handleClose} className="px-4 py-2 rounded-full text-sm text-[#A1A1AA] hover:text-white">Cancel</button>
                 <button
                   onClick={handleImport}
-                  disabled={importing || transactions.length === 0}
-                  className="px-5 py-2 rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold text-sm hover:bg-[#FDE047]/90 disabled:opacity-50 flex items-center gap-2"
+                  disabled={importing || totalIncludedCount === 0}
+                  className="px-5 py-2.5 rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold text-sm hover:bg-[#FDE047]/90 disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-[#FDE047]/20"
                 >
-                  {importing ? <><Loader2 size={14} className="animate-spin" /> Importing...</> : `Import ${transactions.length}`}
+                  {importing ? (
+                    <><Loader2 size={14} className="animate-spin" /> Importing...</>
+                  ) : (
+                    <>Import {includedExpenseCount} Expense{includedExpenseCount !== 1 ? 's' : ''}{includedIncomeCount > 0 ? ` + ${includedIncomeCount} Income` : ''}</>
+                  )}
                 </button>
               </div>
             </div>

@@ -27,6 +27,10 @@ DEFAULT_CATEGORIES = [
     {"name": "Bills & Utilities", "icon": "zap", "color": "#96CEB4"},
     {"name": "Shopping", "icon": "shopping-bag", "color": "#FFEAA7"},
     {"name": "Health", "icon": "heart-pulse", "color": "#DDA0DD"},
+    {"name": "Groceries", "icon": "carrot", "color": "#2ECC71"},
+    {"name": "Education", "icon": "graduation-cap", "color": "#3498DB"},
+    {"name": "Subscriptions", "icon": "repeat", "color": "#9B59B6"},
+    {"name": "Travel", "icon": "plane", "color": "#F39C12"},
 ]
 
 # ── Startup Events ──────────────────────────────────────────────────
@@ -44,9 +48,13 @@ async def migrate_budgets_add_month():
 
 @app.on_event("startup")
 async def seed_default_categories():
-    count = await db.categories.count_documents({"is_default": True})
-    if count == 0:
-        for cat in DEFAULT_CATEGORIES:
+    """Seed default categories. Also adds any new default categories that don't exist yet."""
+    existing = await db.categories.find({"is_default": True}, {"name": 1}).to_list(100)
+    existing_names = {cat["name"] for cat in existing}
+
+    added = 0
+    for cat in DEFAULT_CATEGORIES:
+        if cat["name"] not in existing_names:
             doc = {
                 "id": str(uuid.uuid4()),
                 "name": cat["name"],
@@ -56,7 +64,10 @@ async def seed_default_categories():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             await db.categories.insert_one(doc)
-        logger.info("Seeded default categories")
+            added += 1
+
+    if added > 0:
+        logger.info(f"Added {added} new default categories")
 
 # ── Register Routers ────────────────────────────────────────────────
 

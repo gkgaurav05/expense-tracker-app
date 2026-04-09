@@ -92,45 +92,39 @@ export default function Expenses() {
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-['General_Sans']">Expenses</h1>
           <p className="text-sm text-[#A1A1AA] mt-1">{expenses.length} transactions</p>
         </div>
-        <TooltipProvider delayDuration={0}>
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  data-testid="upload-statement-btn"
-                  onClick={() => setUploadModalOpen(true)}
-                  className="w-12 h-12 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
-                >
-                  <Upload size={18} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="bg-[#171717] border-white/10 text-white">
-                Import Bank Statement
-              </TooltipContent>
-            </Tooltip>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            data-testid="upload-statement-btn"
+            onClick={() => setUploadModalOpen(true)}
+            className="h-11 sm:h-12 px-4 sm:px-5 rounded-full bg-white/[0.08] border border-white/[0.1] flex items-center gap-2 text-white hover:bg-white/[0.12] hover:border-white/[0.2] transition-all group"
+          >
+            <Upload size={16} className="text-[#FDE047] group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-medium hidden sm:inline">Import</span>
+          </button>
+          <TooltipProvider delayDuration={0}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   data-testid="export-csv-btn"
                   onClick={handleExportCSV}
-                  className="w-12 h-12 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
+                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
                 >
-                  <Download size={18} />
+                  <Download size={16} />
                 </button>
               </TooltipTrigger>
               <TooltipContent className="bg-[#171717] border-white/10 text-white">
                 Export CSV
               </TooltipContent>
             </Tooltip>
-            <button
-              data-testid="add-expense-btn"
-              onClick={() => { setEditingExpense(null); setModalOpen(true); }}
-              className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-6 h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
-            >
-              <Plus size={18} strokeWidth={2.5} /> Add
-            </button>
-          </div>
-        </TooltipProvider>
+          </TooltipProvider>
+          <button
+            data-testid="add-expense-btn"
+            onClick={() => { setEditingExpense(null); setModalOpen(true); }}
+            className="rounded-full bg-[#FDE047] text-[#0A0A0A] font-bold px-5 sm:px-6 h-11 sm:h-12 flex items-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 text-sm tracking-wide uppercase shadow-lg shadow-[#FDE047]/20"
+          >
+            <Plus size={18} strokeWidth={2.5} /> Add
+          </button>
+        </div>
       </motion.div>
 
       {/* Month Navigator */}
@@ -190,9 +184,40 @@ export default function Expenses() {
           <div className="w-8 h-8 rounded-full border-2 border-[#FDE047] border-t-transparent animate-spin" />
         </div>
       ) : expenses.length === 0 ? (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card text-center py-16">
-          <Receipt size={40} className="mx-auto text-[#A1A1AA] mb-4" />
-          <p className="text-[#A1A1AA]">No expenses found. Add your first expense!</p>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card text-center py-12 px-6">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-[#FDE047]/20 to-[#FDE047]/5 flex items-center justify-center">
+            <Receipt size={36} className="text-[#FDE047]" />
+          </div>
+          <h3 className="text-xl font-semibold text-white mb-2 font-['General_Sans']">No expenses yet</h3>
+          <p className="text-[#A1A1AA] mb-8 max-w-md mx-auto">
+            Start tracking your spending by importing a bank statement or adding expenses manually.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+            <button
+              onClick={() => setUploadModalOpen(true)}
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#FDE047] text-[#0A0A0A] font-bold flex items-center justify-center gap-2 hover:bg-[#FDE047]/90 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#FDE047]/20"
+            >
+              <Upload size={18} /> Import Bank Statement
+            </button>
+            <span className="text-[#A1A1AA] text-sm">or</span>
+            <button
+              onClick={() => { setEditingExpense(null); setModalOpen(true); }}
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white/[0.08] border border-white/[0.1] text-white font-medium flex items-center justify-center gap-2 hover:bg-white/[0.12] transition-all"
+            >
+              <Plus size={18} /> Add Manually
+            </button>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-white/[0.06]">
+            <p className="text-xs text-[#A1A1AA]/70 flex items-center justify-center gap-2">
+              <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                Supports
+              </span>
+              GPay • PhonePe • Axis • HDFC • SBI • CSV • PDF • HTML
+            </p>
+          </div>
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }} className="space-y-3" data-testid="expense-list">
