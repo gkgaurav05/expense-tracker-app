@@ -2,14 +2,26 @@
 
 **Smart Expense Tracker with AI-Powered Insights**
 
-A modern, full-stack expense tracking application built for students and professionals who want to quickly log, categorize, and understand their spending. Features a striking Hyper-Saturated Fluid UI with glassmorphic design elements, real-time budget alerts, and AI-driven spending analysis powered by OpenAI.
+A modern, full-stack expense tracking application built for students and professionals who want to quickly log, categorize, and understand their spending. Features a striking Hyper-Saturated Fluid UI with glassmorphic design elements, real-time budget alerts, and AI-driven spending analysis powered by Google Gemini.
 
 ---
 
 ## Features
 
+- **Bank Statement Import** -- Upload bank statements (CSV, PDF, HTML) to bulk import transactions
+  - **Local parsing** -- All files processed locally, no data sent externally
+  - **Multi-page PDF support** -- Extracts transactions across all pages with column structure preservation
+  - **GPay/PhonePe support** -- Handles UPI statement PDFs with garbled text extraction
+  - **Traditional bank PDFs** -- Axis, HDFC, SBI, etc. with proper Withdrawal/Deposit column detection
+  - **Password-protected PDFs** -- Enter password to decrypt encrypted bank statements
+  - **Duplicate detection** -- Hash-based detection prevents re-importing same transactions; shown at preview stage
+  - **Reversal detection** -- Auto-detects same-day matching debit/credit pairs (cancelled/reversed transactions)
+  - **Auto-categorization** -- Keyword matching against 10 categories with 300+ merchant patterns
+  - **Income detection** -- Automatically identifies credits/deposits as income
+  - **Payee learning** -- Remembers your category choices for recurring payees
+  - **AI fallback** -- Optional OpenAI extraction when local parsing fails (with consent)
 - **Expense Management** -- Add, edit, delete expenses with category, description, and date picker (future dates blocked). Month navigator to browse expenses by month with inline summary stats (total spent, count). Category filter works within the selected month.
-- **Smart Categories** -- 6 pre-built categories (Food & Dining, Transport, Entertainment, Bills & Utilities, Shopping, Health) + custom categories
+- **Smart Categories** -- 10 pre-built categories (Food & Dining, Groceries, Transport, Travel, Shopping, Entertainment, Subscriptions, Health, Education, Bills & Utilities) + custom categories
 - **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars, month navigation, and month summary card showing total budget/spent/remaining with days tracker for current month
 - **Budget History** -- Navigate to any previous month to view or set budgets; each month maintains its own budget configuration
 - **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets, scoped to the selected month across Dashboard and Budgets pages
@@ -171,10 +183,16 @@ spendrax/
 |   +-- models.py               # Pydantic request models
 |   +-- auth.py                 # JWT utilities, password hashing, get_current_user
 |   +-- requirements.txt        # Python dependencies
+|   +-- parsers/                # Bank statement parsing module
+|   |   +-- __init__.py         # Module exports
+|   |   +-- csv_parser.py       # CSV statement parser
+|   |   +-- html_parser.py      # HTML statement parser
+|   |   +-- pdf_parser.py       # PDF parser (multi-page, GPay/PhonePe, traditional banks)
+|   |   +-- utils.py            # Categorization keywords, duplicate/reversal detection
 |   +-- routes/
 |       +-- auth.py             # /api/auth (register, login, me)
 |       +-- categories.py       # /api/categories CRUD
-|       +-- expenses.py         # /api/expenses CRUD
+|       +-- expenses.py         # /api/expenses CRUD + upload/bulk import
 |       +-- budgets.py          # /api/budgets CRUD
 |       +-- dashboard.py        # /api/dashboard/summary
 |       +-- alerts.py           # /api/alerts
@@ -209,12 +227,13 @@ spendrax/
         |   +-- Reports.js      # Shareable monthly report
         |   +-- Insights.js     # AI-powered spending analysis
         +-- components/
-            +-- Sidebar.js           # Navigation (desktop + mobile) + logout
-            +-- ProtectedRoute.js    # Route guard for authenticated users
-            +-- AddExpenseModal.js   # Add/edit expense dialog
-            +-- SpendingCharts.js    # Recharts bar & pie charts
-            +-- BudgetAlerts.js      # Overspend alert banners
-            +-- ui/                  # shadcn/ui components
+            +-- Sidebar.js              # Navigation (desktop + mobile) + logout
+            +-- ProtectedRoute.js       # Route guard for authenticated users
+            +-- AddExpenseModal.js      # Add/edit expense dialog
+            +-- UploadStatementModal.js # Bank statement upload with preview
+            +-- SpendingCharts.js       # Recharts bar & pie charts
+            +-- BudgetAlerts.js         # Overspend alert banners
+            +-- ui/                     # shadcn/ui components
 ```
 
 ---
@@ -233,12 +252,16 @@ All endpoints are prefixed with `/api`. Endpoints marked with 🔒 require authe
 
 ### Expenses 🔒
 
-| Method   | Endpoint                | Description              |
-| -------- | ----------------------- | ------------------------ |
-| `GET`    | `/api/expenses`         | List user's expenses (filterable by `category`, `start_date`, `end_date`) |
-| `POST`   | `/api/expenses`         | Create expense           |
-| `PUT`    | `/api/expenses/{id}`    | Update expense           |
-| `DELETE` | `/api/expenses/{id}`    | Delete expense           |
+| Method   | Endpoint                    | Description              |
+| -------- | --------------------------- | ------------------------ |
+| `GET`    | `/api/expenses`             | List user's expenses (filterable by `category`, `start_date`, `end_date`) |
+| `POST`   | `/api/expenses`             | Create expense           |
+| `PUT`    | `/api/expenses/{id}`        | Update expense           |
+| `DELETE` | `/api/expenses/{id}`        | Delete expense           |
+| `POST`   | `/api/expenses/upload`      | Upload bank statement (CSV/PDF/HTML). Query params: `use_ai=false`, `password=<pdf_password>` |
+| `POST`   | `/api/expenses/bulk`        | Bulk create expenses from uploaded statement |
+| `GET`    | `/api/expenses/payee-mappings` | Get saved payee-to-category mappings |
+| `POST`   | `/api/expenses/apply-mappings` | Apply saved mappings to transactions |
 
 ### Categories 🔒
 
@@ -326,9 +349,10 @@ Open `http://localhost:3000`.
 MongoDB collections are auto-created on first use:
 
 - **users** -- User accounts (email, hashed password, name)
-- **categories** -- 6 default categories seeded on startup + user custom categories
+- **categories** -- 10 default categories seeded on startup + user custom categories
 - **expenses** -- User expense records (scoped by `user_id`)
 - **budgets** -- Month-wise budget limits per category (scoped by `user_id` + category + YYYY-MM month)
+- **payee_mappings** -- Learned payee-to-category mappings for statement imports (scoped by `user_id`)
 
 Data persists in a Docker volume (`mongo_data`). To reset:
 ```bash

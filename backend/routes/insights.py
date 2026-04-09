@@ -5,7 +5,7 @@ import calendar
 import os
 import logging
 
-from openai import AsyncOpenAI
+import google.generativeai as genai
 from database import db
 from auth import get_current_user
 
@@ -136,42 +136,38 @@ async def get_ai_insights(
             f"Total spent: Rs.{current_total:.0f}, {len(expenses)} expenses over {days_in_month} days"
         )
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        return {"insights": "AI insights unavailable. API key not configured."}
+        return {"insights": "AI insights unavailable. Gemini API key not configured."}
 
     try:
-        client = AsyncOpenAI(api_key=api_key)
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a smart personal finance advisor. Analyze the user's spending data for the specified month "
-                        "and provide actionable, concise insights. Use INR currency. "
-                        "IMPORTANT: Pay close attention to how far into the month we are. If it's early in the month, "
-                        "project spending to month-end based on current pace and warn about categories likely to exceed budget. "
-                        "For example, if someone spends Rs.1200 on Entertainment in the first 4 days with a Rs.5000 budget, "
-                        "that projects to ~Rs.9000 which would exceed the budget — flag this clearly. "
-                        "Compare with the previous month where relevant. "
-                        "Keep it friendly, brief, and helpful. Use bullet points. Max 5 insights."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"{progress_text}\n\n"
-                        f"Category pace vs budget:\n{pace_text}\n\n"
-                        f"Detailed expenses for {target_month}:\n{expense_text}\n\n"
-                        f"My budgets:\n{budget_text}\n\n"
-                        f"{prev_summary}\n\n"
-                        f"Give me key spending insights for {target_month}."
-                    )
-                }
-            ],
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+
+        system_prompt = (
+            "You are a smart personal finance advisor. Analyze the user's spending data for the specified month "
+            "and provide actionable, concise insights. Use INR currency. "
+            "IMPORTANT: Pay close attention to how far into the month we are. If it's early in the month, "
+            "project spending to month-end based on current pace and warn about categories likely to exceed budget. "
+            "For example, if someone spends Rs.1200 on Entertainment in the first 4 days with a Rs.5000 budget, "
+            "that projects to ~Rs.9000 which would exceed the budget — flag this clearly. "
+            "Compare with the previous month where relevant. "
+            "Keep it friendly, brief, and helpful. Use bullet points. Max 5 insights."
         )
-        return {"insights": response.choices[0].message.content}
+
+        user_prompt = (
+            f"{progress_text}\n\n"
+            f"Category pace vs budget:\n{pace_text}\n\n"
+            f"Detailed expenses for {target_month}:\n{expense_text}\n\n"
+            f"My budgets:\n{budget_text}\n\n"
+            f"{prev_summary}\n\n"
+            f"Give me key spending insights for {target_month}."
+        )
+
+        full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+
+        response = await model.generate_content_async(full_prompt)
+        return {"insights": response.text}
     except Exception as e:
         logger.error(f"AI insights error: {e}")
         return {"insights": "Unable to generate insights right now. Please try again later."}
