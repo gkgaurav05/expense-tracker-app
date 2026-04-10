@@ -1,17 +1,22 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Receipt, PiggyBank, LogOut } from 'lucide-react';
+import { LayoutDashboard, Receipt, PiggyBank, LogOut, Shield } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/context/AuthContext';
 
-const navItems = [
+const baseNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/budgets', icon: PiggyBank, label: 'Budgets' },
 ];
 
+const adminNavItem = { to: '/admin', icon: Shield, label: 'Admin' };
+
 export default function Sidebar() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
+
+  const isAdmin = user?.role === 'admin';
+  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
 
   const handleLogout = () => {
     logout();

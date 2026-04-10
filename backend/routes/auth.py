@@ -23,6 +23,7 @@ async def register(data: UserRegister):
         "email": data.email.lower(),
         "name": data.name,
         "password": hash_password(data.password),
+        "role": "user",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(user)
@@ -37,6 +38,7 @@ async def register(data: UserRegister):
             "id": user["id"],
             "email": user["email"],
             "name": user["name"],
+            "role": user.get("role", "user"),
         }
     }
 
@@ -62,6 +64,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             "id": user["id"],
             "email": user["email"],
             "name": user["name"],
+            "role": user.get("role", "user"),
         }
     }
 

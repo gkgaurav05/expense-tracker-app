@@ -69,6 +69,10 @@ export const api = {
 
   // Savings
   getSavings: (params) => instance.get('/savings', { params }),
+
+  // Admin
+  getAdminStats: () => instance.get('/admin/stats'),
+  getAdminActivity: () => instance.get('/admin/activity'),
 };
 
 export const formatINR = (value) =>

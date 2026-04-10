@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import uuid
 from database import db, client
-from routes import auth, categories, expenses, budgets, dashboard, alerts, reports, insights, savings
+from routes import auth, categories, expenses, budgets, dashboard, alerts, reports, insights, savings, admin
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -46,6 +46,25 @@ async def migrate_budgets_add_month():
     if result.modified_count > 0:
         logger.info(f"Migrated {result.modified_count} budgets to month {current_month}")
 
+
+@app.on_event("startup")
+async def set_admin_users():
+    """Set admin role for users specified in ADMIN_EMAILS env var (comma-separated)."""
+    admin_emails = os.environ.get("ADMIN_EMAILS", "")
+    if not admin_emails:
+        return
+
+    emails = [e.strip().lower() for e in admin_emails.split(",") if e.strip()]
+    if not emails:
+        return
+
+    result = await db.users.update_many(
+        {"email": {"$in": emails}},
+        {"$set": {"role": "admin"}}
+    )
+    if result.modified_count > 0:
+        logger.info(f"Set admin role for {result.modified_count} users")
+
 @app.on_event("startup")
 async def seed_default_categories():
     """Seed default categories. Also adds any new default categories that don't exist yet."""
@@ -80,6 +99,7 @@ api_router.include_router(alerts.router)
 api_router.include_router(reports.router)
 api_router.include_router(insights.router)
 api_router.include_router(savings.router)
+api_router.include_router(admin.router)
 
 @api_router.get("/")
 async def root():
