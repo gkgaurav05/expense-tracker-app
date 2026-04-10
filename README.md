@@ -2,7 +2,7 @@
 
 **Smart Expense Tracker with AI-Powered Insights**
 
-A modern, full-stack expense tracking application built for students and professionals who want to quickly log, categorize, and understand their spending. Features a striking Hyper-Saturated Fluid UI with glassmorphic design elements, real-time budget alerts, and AI-driven spending analysis powered by Google Gemini.
+A modern, full-stack expense tracking application built for students and professionals who want to quickly log, categorize, and understand their spending. Features a striking Hyper-Saturated Fluid UI with glassmorphic design elements, real-time budget alerts, and AI-driven spending analysis powered by OpenAI GPT-4o-mini.
 
 ---
 

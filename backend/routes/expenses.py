@@ -84,12 +84,12 @@ async def detect_duplicates(transactions: List[dict], user_id: str) -> List[dict
 async def parse_pdf_with_ai(file_content: bytes, user_id: str) -> List[dict]:
     """Parse PDF bank/UPI statement using AI to extract transactions (fallback)."""
     import pdfplumber
-    import google.generativeai as genai
+    from openai import AsyncOpenAI
     from parsers import is_likely_credit
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise ValueError("AI extraction not available - GEMINI_API_KEY not configured")
+        raise ValueError("AI extraction not available - OPENAI_API_KEY not configured")
 
     # Extract text from PDF
     try:
@@ -115,8 +115,7 @@ async def parse_pdf_with_ai(file_content: bytes, user_id: str) -> List[dict]:
     ).to_list(100)
     category_names = [c["name"] for c in categories]
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = AsyncOpenAI(api_key=api_key)
 
     prompt = f"""Extract ALL transactions from this bank or UPI statement (both debits and credits).
 
@@ -147,8 +146,13 @@ Respond with ONLY a JSON array of transactions. Example format:
 If no valid transactions found, respond with an empty array: []"""
 
     try:
-        response = await model.generate_content_async(prompt)
-        result_text = response.text.strip()
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4000,
+            temperature=0.3
+        )
+        result_text = response.choices[0].message.content.strip()
 
         # Extract JSON array from response
         json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
@@ -284,7 +288,7 @@ async def delete_expense(expense_id: str, current_user: dict = Depends(get_curre
 @router.post("/expenses/upload")
 async def upload_statement(
     file: UploadFile = File(...),
-    use_ai: bool = Query(False, description="Use AI for PDF parsing (sends data to Gemini)"),
+    use_ai: bool = Query(False, description="Use AI for PDF parsing (sends data to OpenAI)"),
     password: Optional[str] = Query(None, description="Password for encrypted PDF files"),
     current_user: dict = Depends(get_current_user)
 ):
@@ -532,9 +536,9 @@ async def categorize_transactions(
     current_user: dict = Depends(get_current_user)
 ):
     """Use AI to categorize transactions based on descriptions."""
-    import google.generativeai as genai
+    from openai import AsyncOpenAI
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(500, "AI categorization not available")
 
@@ -545,8 +549,7 @@ async def categorize_transactions(
     ).to_list(100)
     category_names = [c["name"] for c in categories]
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = AsyncOpenAI(api_key=api_key)
 
     # Prepare transactions for AI
     txn_list = [{"idx": i, "desc": t.get("description", "")[:100], "amount": t.get("amount", 0)}
@@ -563,8 +566,13 @@ Example: [{{"idx": 0, "category": "Food & Dining"}}]
 Only use categories from the provided list. If unsure, use "Other"."""
 
     try:
-        response = await model.generate_content_async(prompt)
-        result_text = response.text
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0.3
+        )
+        result_text = response.choices[0].message.content
         # Extract JSON from response
         json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
         if json_match:
