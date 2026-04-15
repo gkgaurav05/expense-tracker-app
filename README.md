@@ -33,6 +33,8 @@ A modern, full-stack expense tracking application built for students and profess
 - **CSV Export** -- Download all expense data as CSV
 - **INR Currency** -- Formatted in Indian Rupees throughout
 - **User Authentication** -- JWT-based auth with login/register, user-scoped data (each user sees only their own expenses/budgets)
+- **Forgot/Reset Password** -- Email-based password reset with secure tokens (1hr expiry), SMTP support (Gmail/AWS SES)
+- **Admin Dashboard** -- Role-based access control with admin-only dashboard showing user stats, activity charts, and recent signups
 
 ---
 
@@ -156,6 +158,13 @@ docker compose down -v
 | `CORS_ORIGINS`     | Yes      | Allowed CORS origins (`*` for all)             |
 | `OPENAI_API_KEY`   | No       | OpenAI API key for AI-powered insights         |
 | `JWT_SECRET_KEY`   | Yes      | Secret key for JWT token signing               |
+| `ADMIN_EMAILS`     | No       | Comma-separated admin emails (auto-promoted on startup) |
+| `SMTP_HOST`        | No       | SMTP server host (e.g., `smtp.gmail.com`)      |
+| `SMTP_PORT`        | No       | SMTP server port (default: `587`)              |
+| `SMTP_USER`        | No       | SMTP username/email                            |
+| `SMTP_PASSWORD`    | No       | SMTP password (Gmail app password recommended) |
+| `FROM_EMAIL`       | No       | Sender email for password reset emails         |
+| `APP_URL`          | No       | App URL for password reset links (e.g., `http://localhost:3000`) |
 
 ### Frontend (`frontend/.env`)
 
@@ -181,7 +190,8 @@ spendrax/
 |   +-- server.py               # App setup, startup events, CORS, router wiring
 |   +-- database.py             # MongoDB client & db instance
 |   +-- models.py               # Pydantic request models
-|   +-- auth.py                 # JWT utilities, password hashing, get_current_user
+|   +-- auth.py                 # JWT utilities, password hashing, get_current_user, get_admin_user
+|   +-- email_utils.py          # SMTP email sending for password reset
 |   +-- requirements.txt        # Python dependencies
 |   +-- parsers/                # Bank statement parsing module
 |   |   +-- __init__.py         # Module exports
@@ -190,7 +200,7 @@ spendrax/
 |   |   +-- pdf_parser.py       # PDF parser (multi-page, GPay/PhonePe, traditional banks)
 |   |   +-- utils.py            # Categorization keywords, duplicate/reversal detection
 |   +-- routes/
-|       +-- auth.py             # /api/auth (register, login, me)
+|       +-- auth.py             # /api/auth (register, login, me, forgot/reset password)
 |       +-- categories.py       # /api/categories CRUD
 |       +-- expenses.py         # /api/expenses CRUD + upload/bulk import
 |       +-- budgets.py          # /api/budgets CRUD
@@ -198,6 +208,7 @@ spendrax/
 |       +-- alerts.py           # /api/alerts
 |       +-- reports.py          # /api/report/monthly + /api/export/csv
 |       +-- insights.py         # /api/insights (OpenAI)
+|       +-- admin.py            # /api/admin (stats, activity) - admin only
 |
 +-- frontend/
     +-- Dockerfile              # Multi-stage: Node build + Nginx serve
@@ -218,14 +229,17 @@ spendrax/
         +-- context/
         |   +-- AuthContext.js  # Auth state management (user, token, login/logout)
         +-- pages/
-        |   +-- Login.js        # Login page
-        |   +-- Register.js     # Registration page
-        |   +-- Dashboard.js    # Overview with charts & stats
-        |   +-- Expenses.js     # Expense CRUD + filtering
-        |   +-- Budgets.js      # Budget management per category
-        |   +-- Summary.js      # Weekly/monthly analysis
-        |   +-- Reports.js      # Shareable monthly report
-        |   +-- Insights.js     # AI-powered spending analysis
+        |   +-- Login.js           # Login page
+        |   +-- Register.js        # Registration page
+        |   +-- ForgotPassword.js  # Forgot password page
+        |   +-- ResetPassword.js   # Reset password page (with token)
+        |   +-- Dashboard.js       # Overview with charts & stats
+        |   +-- Expenses.js        # Expense CRUD + filtering
+        |   +-- Budgets.js         # Budget management per category
+        |   +-- Summary.js         # Weekly/monthly analysis
+        |   +-- Reports.js         # Shareable monthly report
+        |   +-- Insights.js        # AI-powered spending analysis
+        |   +-- Admin.js           # Admin dashboard (role-based access)
         +-- components/
             +-- Sidebar.js              # Navigation (desktop + mobile) + logout
             +-- ProtectedRoute.js       # Route guard for authenticated users
@@ -244,11 +258,13 @@ All endpoints are prefixed with `/api`. Endpoints marked with 🔒 require authe
 
 ### Authentication
 
-| Method   | Endpoint                | Description              |
-| -------- | ----------------------- | ------------------------ |
-| `POST`   | `/api/auth/register`    | Register new user        |
-| `POST`   | `/api/auth/login`       | Login (returns JWT token)|
-| `GET`    | `/api/auth/me`          | Get current user 🔒      |
+| Method   | Endpoint                    | Description                        |
+| -------- | --------------------------- | ---------------------------------- |
+| `POST`   | `/api/auth/register`        | Register new user                  |
+| `POST`   | `/api/auth/login`           | Login (returns JWT token)          |
+| `GET`    | `/api/auth/me`              | Get current user 🔒                |
+| `POST`   | `/api/auth/forgot-password` | Request password reset email       |
+| `POST`   | `/api/auth/reset-password`  | Reset password with token          |
 
 ### Expenses 🔒
 
@@ -288,6 +304,13 @@ All endpoints are prefixed with `/api`. Endpoints marked with 🔒 require authe
 | `GET`    | `/api/alerts`             | Budget overspend alerts (`?month=YYYY-MM`) |
 | `GET`    | `/api/export/csv`         | Download user's expenses as CSV            |
 | `POST`   | `/api/insights`           | Generate AI spending insights (`?month=YYYY-MM`) |
+
+### Admin 🔒 (requires admin role)
+
+| Method   | Endpoint                | Description                                        |
+| -------- | ----------------------- | -------------------------------------------------- |
+| `GET`    | `/api/admin/stats`      | Total users, expenses, budgets + recent signups    |
+| `GET`    | `/api/admin/activity`   | Today/this week/last 30 days activity breakdown    |
 
 ---
 
@@ -348,11 +371,12 @@ Open `http://localhost:3000`.
 
 MongoDB collections are auto-created on first use:
 
-- **users** -- User accounts (email, hashed password, name)
+- **users** -- User accounts (email, hashed password, name, role)
 - **categories** -- 10 default categories seeded on startup + user custom categories
 - **expenses** -- User expense records (scoped by `user_id`)
 - **budgets** -- Month-wise budget limits per category (scoped by `user_id` + category + YYYY-MM month)
 - **payee_mappings** -- Learned payee-to-category mappings for statement imports (scoped by `user_id`)
+- **password_resets** -- Password reset tokens (user_id, token, expires_at)
 
 Data persists in a Docker volume (`mongo_data`). To reset:
 ```bash

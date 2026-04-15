@@ -26,6 +26,8 @@ export const api = {
   }),
   register: (data) => instance.post('/auth/register', data),
   getMe: () => instance.get('/auth/me'),
+  forgotPassword: (email) => instance.post('/auth/forgot-password', { email }),
+  resetPassword: (token, new_password) => instance.post('/auth/reset-password', { token, new_password }),
 
   // Dashboard & Analytics
   getDashboardSummary: (params) => instance.get('/dashboard/summary', { params }),

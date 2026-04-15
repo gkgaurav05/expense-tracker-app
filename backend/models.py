@@ -26,3 +26,12 @@ class BudgetCreate(BaseModel):
     category: str
     amount: float
     month: Optional[str] = None  # YYYY-MM format; defaults to current month
+
+
+class ForgotPassword(BaseModel):
+    email: EmailStr
+
+
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str
