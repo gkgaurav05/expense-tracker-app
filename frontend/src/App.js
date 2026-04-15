@@ -10,6 +10,8 @@ import Budgets from "@/pages/Budgets";
 import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 
 function AppRoutes() {
   const { isAuthenticated, loading } = useAuth();
@@ -32,6 +34,14 @@ function AppRoutes() {
       <Route
         path="/register"
         element={isAuthenticated ? <Navigate to="/" replace /> : <Register />}
+      />
+      <Route
+        path="/forgot-password"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <ForgotPassword />}
+      />
+      <Route
+        path="/reset-password"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <ResetPassword />}
       />
 
       {/* Protected routes */}
