@@ -365,10 +365,14 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     setTransactions(prev => prev.map((t, i) => {
       if (i !== index) return t;
       const newType = t.type === 'expense' ? 'income' : 'expense';
+      // Preserve existing category, only default to Income/Uncategorized if not set
+      const newCategory = t.category && t.category !== 'Income' && t.category !== 'Uncategorized'
+        ? t.category
+        : (newType === 'income' ? 'Income' : 'Uncategorized');
       return {
         ...t,
         type: newType,
-        category: newType === 'income' ? 'Income' : 'Uncategorized',
+        category: newCategory,
         auto_categorized: false
       };
     }));
@@ -1073,8 +1077,17 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
 
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] text-[#A1A1AA] truncate" title={txn.description}>{txn.description || 'No description'}</p>
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <span className="text-[9px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">Income</span>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <Select value={txn.category} onValueChange={(val) => updateTransaction(txn.originalIdx, 'category', val)}>
+                                  <SelectTrigger className="h-5 w-28 text-[9px] bg-green-500/10 border-green-500/20 rounded text-green-400" onClick={(e) => e.stopPropagation()}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-[#171717] border-white/10 text-white">
+                                    {categoryOptions.map(cat => (
+                                      <SelectItem key={cat} value={cat} className="text-xs focus:bg-white/10">{cat}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                                 {isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 flex items-center gap-0.5"><Copy size={8} />Duplicate</span>}
                                 {isReversal && !isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 flex items-center gap-0.5"><RotateCcw size={8} />Reversal</span>}
                               </div>
