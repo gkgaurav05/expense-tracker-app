@@ -30,7 +30,12 @@ async def get_budget_alerts(month: Optional[str] = None, current_user: dict = De
         month_end = now.strftime("%Y-%m-%d")
         target_month = now.strftime("%Y-%m")
 
-    expense_query = {"user_id": user_id, "date": {"$gte": month_start, "$lt": month_end}} if month else {"user_id": user_id, "date": {"$gte": month_start, "$lte": month_end}}
+    # Exclude income from budget alert calculations
+    base_query = {"user_id": user_id, "type": {"$ne": "income"}}
+    if month:
+        expense_query = {**base_query, "date": {"$gte": month_start, "$lt": month_end}}
+    else:
+        expense_query = {**base_query, "date": {"$gte": month_start, "$lte": month_end}}
     expenses = await db.expenses.find(expense_query, {"_id": 0}).to_list(10000)
 
     category_totals = {}
