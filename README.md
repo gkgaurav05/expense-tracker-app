@@ -25,12 +25,8 @@ A modern, full-stack expense tracking application built for students and profess
 - **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars, month navigation, and month summary card showing total budget/spent/remaining with days tracker for current month
 - **Budget History** -- Navigate to any previous month to view or set budgets; each month maintains its own budget configuration
 - **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets, scoped to the selected month across Dashboard and Budgets pages
-- **Dashboard** -- Month-navigable overview with total monthly spend, weekly spend (current month) or avg/day (past months), budget remaining, daily spending bar chart, category pie chart, budget alerts, and recent expenses -- all scoped to the selected month
-- **Weekly/Monthly Summary** -- Period navigation with trend charts and category breakdown with percentage bars
-- **Savings Tracker** -- Dedicated page analyzing budget performance over 3/6/12 months with monthly breakdown, cumulative category savings, savings rate percentage, and motivational feedback
-- **AI Insights** -- Month-navigable OpenAI-powered spending analysis with pace projections, budget exceed warnings, previous month comparison, and personalized savings tips
-- **Shareable Reports** -- Monthly report cards with share via Web Share API, copy link, or CSV download
-- **CSV Export** -- Download all expense data as CSV
+- **Dashboard** -- Month-navigable overview with weekly/monthly toggle, total spend, budget remaining, daily spending bar chart, category pie chart, budget alerts, recent expenses, share via Web Share API, and CSV download -- all scoped to the selected period
+- **CSV Export** -- Download expenses as CSV filtered by the selected month and category
 - **INR Currency** -- Formatted in Indian Rupees throughout
 - **User Authentication** -- JWT-based auth with login/register, user-scoped data (each user sees only their own expenses/budgets)
 - **Forgot/Reset Password** -- Email-based password reset with secure tokens (1hr expiry), SMTP support (Gmail/AWS SES)
@@ -233,12 +229,9 @@ spendrax/
         |   +-- Register.js        # Registration page
         |   +-- ForgotPassword.js  # Forgot password page
         |   +-- ResetPassword.js   # Reset password page (with token)
-        |   +-- Dashboard.js       # Overview with charts & stats
-        |   +-- Expenses.js        # Expense CRUD + filtering
-        |   +-- Budgets.js         # Budget management per category
-        |   +-- Summary.js         # Weekly/monthly analysis
-        |   +-- Reports.js         # Shareable monthly report
-        |   +-- Insights.js        # AI-powered spending analysis
+        |   +-- Dashboard.js       # Overview with weekly/monthly charts, stats, share & CSV export
+        |   +-- Expenses.js        # Expense CRUD, month navigation, category filter, CSV export
+        |   +-- Budgets.js         # Budget management per category with savings tracking
         |   +-- Admin.js           # Admin dashboard (role-based access)
         +-- components/
             +-- Sidebar.js              # Navigation (desktop + mobile) + logout
