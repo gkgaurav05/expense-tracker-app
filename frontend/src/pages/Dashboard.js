@@ -44,9 +44,13 @@ export default function Dashboard() {
   const monthLabel = format(currentDate, 'MMMM yyyy');
   const isCurrentMonth = monthStr === format(new Date(), 'yyyy-MM');
 
-  // Weekly date range labels
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+  // Weekly date range labels — derived from backend response to avoid UTC vs local-time mismatch
+  const weekStart = summary?.week_start
+    ? new Date(summary.week_start + 'T00:00:00')
+    : startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekEnd = summary?.week_end
+    ? new Date(summary.week_end + 'T00:00:00')
+    : endOfWeek(new Date(), { weekStartsOn: 1 });
   const weekLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`;
 
   // Auto-switch to monthly view when navigating to past months
