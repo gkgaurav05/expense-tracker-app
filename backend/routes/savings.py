@@ -49,8 +49,9 @@ async def get_savings_summary(months: Optional[int] = 6, current_user: dict = De
     else:
         end_date = f"{end_year}-{end_month + 1:02d}-01"
 
+    # Exclude income from savings calculations
     expenses = await db.expenses.find(
-        {"user_id": user_id, "date": {"$gte": start_date, "$lt": end_date}},
+        {"user_id": user_id, "date": {"$gte": start_date, "$lt": end_date}, "type": {"$ne": "income"}},
         {"_id": 0}
     ).to_list(10000)
 

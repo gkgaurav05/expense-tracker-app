@@ -29,8 +29,8 @@ async def get_dashboard_summary(
         year, m = now.year, now.month
         target_month = now.strftime("%Y-%m")
 
-        # Fetch weekly expenses
-        expense_query = {"user_id": user_id, "date": {"$gte": week_start, "$lte": week_end}}
+        # Fetch weekly expenses (exclude income)
+        expense_query = {"user_id": user_id, "date": {"$gte": week_start, "$lte": week_end}, "type": {"$ne": "income"}}
         expenses = await db.expenses.find(expense_query, {"_id": 0}).to_list(10000)
         total_spent = sum(e["amount"] for e in expenses)
 
@@ -105,7 +105,8 @@ async def get_dashboard_summary(
         month_end = f"{year}-{m:02d}-{last_day}"
         target_month = now.strftime("%Y-%m")
 
-    expense_query = {"user_id": user_id, "date": {"$gte": month_start, "$lte": month_end}}
+    # Exclude income from spending calculations
+    expense_query = {"user_id": user_id, "date": {"$gte": month_start, "$lte": month_end}, "type": {"$ne": "income"}}
     monthly_expenses = await db.expenses.find(expense_query, {"_id": 0}).to_list(10000)
 
     total_month = sum(e["amount"] for e in monthly_expenses)

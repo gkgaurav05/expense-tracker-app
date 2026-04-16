@@ -35,8 +35,9 @@ async def get_monthly_report(month: Optional[str] = None, current_user: dict = D
         else:
             end = f"{now.year}-{now.month + 1:02d}-01"
 
+    # Exclude income from spending reports
     expenses = await db.expenses.find(
-        {"user_id": user_id, "date": {"$gte": start, "$lt": end}}, {"_id": 0}
+        {"user_id": user_id, "date": {"$gte": start, "$lt": end}, "type": {"$ne": "income"}}, {"_id": 0}
     ).to_list(10000)
 
     total = sum(e["amount"] for e in expenses)
@@ -109,12 +110,17 @@ async def export_expenses_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Category", "Description", "Amount (INR)"])
+    writer.writerow(["Date", "Category", "Description", "Type", "Amount (INR)"])
     for e in expenses:
-        writer.writerow([e["date"], e["category"], e.get("description", ""), e["amount"]])
-    total = sum(e["amount"] for e in expenses)
+        writer.writerow([e["date"], e["category"], e.get("description", ""), e.get("type", "expense"), e["amount"]])
+
+    # Calculate separate totals for expenses and income
+    total_expenses = sum(e["amount"] for e in expenses if e.get("type", "expense") != "income")
+    total_income = sum(e["amount"] for e in expenses if e.get("type") == "income")
     writer.writerow([])
-    writer.writerow(["", "", "Total", total])
+    writer.writerow(["", "", "", "Total Expenses", total_expenses])
+    writer.writerow(["", "", "", "Total Income", total_income])
+    writer.writerow(["", "", "", "Net", total_expenses - total_income])
     output.seek(0)
 
     return StreamingResponse(
