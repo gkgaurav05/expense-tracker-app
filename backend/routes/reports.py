@@ -95,6 +95,7 @@ async def get_monthly_report(month: Optional[str] = None, current_user: dict = D
 async def export_expenses_csv(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    category: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     query = {"user_id": current_user["id"]}
@@ -105,6 +106,8 @@ async def export_expenses_csv(
         if end_date:
             date_q["$lte"] = end_date
         query["date"] = date_q
+    if category:
+        query["category"] = category
 
     expenses = await db.expenses.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
 

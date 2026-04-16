@@ -68,7 +68,11 @@ export default function Expenses() {
 
   const handleExportCSV = async () => {
     try {
-      const params = filter !== 'all' ? { category: filter } : {};
+      const params = {
+        start_date: `${monthStr}-01`,
+        end_date: `${monthStr}-31`,
+      };
+      if (filter !== 'all') params.category = filter;
       const { data } = await api.exportCSV(params);
       const url = window.URL.createObjectURL(new Blob([data]));
       const a = document.createElement('a');
