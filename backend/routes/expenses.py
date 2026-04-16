@@ -263,6 +263,9 @@ async def get_expenses(
 
 @router.put("/expenses/{expense_id}")
 async def update_expense(expense_id: str, data: ExpenseCreate, current_user: dict = Depends(get_current_user)):
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if data.date > today:
+        raise HTTPException(400, "Cannot set expense date to a future date")
     result = await db.expenses.update_one(
         {"id": expense_id, "user_id": current_user["id"]},
         {"$set": {"amount": data.amount, "category": data.category, "description": data.description, "date": data.date}}
