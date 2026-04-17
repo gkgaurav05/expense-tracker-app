@@ -43,6 +43,37 @@ jobs:
           path: reports/frontend-report.xml
           retention-days: 30
 
+      - name: Generate summary
+        if: always()
+        run: |
+          if [ -f reports/frontend-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/frontend-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/frontend-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/frontend-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/frontend-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
+
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
+
+            echo "## Frontend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Frontend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — tests may not have run." >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Tear down frontend regression stack
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
@@ -68,6 +99,37 @@ jobs:
           name: backend-regression-report
           path: reports/backend-regression-report.xml
           retention-days: 30
+
+      - name: Generate summary
+        if: always()
+        run: |
+          if [ -f reports/backend-regression-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/backend-regression-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/backend-regression-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/backend-regression-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/backend-regression-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
+
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
+
+            echo "## Backend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Backend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — tests may not have run." >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Tear down regression stack
         if: always()
@@ -95,9 +157,87 @@ jobs:
           path: reports/backend-report.xml
           retention-days: 30
 
+      - name: Generate summary
+        if: always()
+        run: |
+          if [ -f reports/backend-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/backend-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/backend-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/backend-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/backend-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
+
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
+
+            echo "## Backend Integration Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Backend Integration Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — tests may not have run." >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Tear down integration stack
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
+
+  # ============================================
+  # TEST REPORTS (Checks tab with per-test details)
+  # ============================================
+  test-report:
+    name: Test Reports
+    needs: [frontend-checks, backend-regressions, backend-integration]
+    if: always() && github.event.inputs.skip_tests != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all test reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      - name: Frontend Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Frontend Regressions (84 tests)
+          path: reports/frontend-test-report/frontend-report.xml
+          reporter: jest-junit
+          fail-on-error: false
+
+      - name: Backend Regression Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Regressions (9 tests)
+          path: reports/backend-regression-report/backend-regression-report.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Backend Integration Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Integration (34 tests)
+          path: reports/backend-test-report/backend-report.xml
+          reporter: java-junit
+          fail-on-error: false
 
   docker-build-check:
     name: Docker Build Check
