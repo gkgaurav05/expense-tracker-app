@@ -32,6 +32,12 @@ function createExpenses() {
   ];
 }
 
+function getMonthEnd(monthStr) {
+  const [year, month] = monthStr.split('-').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${monthStr}-${String(lastDay).padStart(2, '0')}`;
+}
+
 describe('Expenses page regressions', () => {
   it('loads the selected month expenses and categories on mount', async () => {
     apiMock.getExpenses.mockResolvedValue({ data: createExpenses() });
@@ -43,7 +49,7 @@ describe('Expenses page regressions', () => {
     const monthStr = new Date().toISOString().slice(0, 7);
     expect(apiMock.getExpenses).toHaveBeenCalledWith({
       start_date: `${monthStr}-01`,
-      end_date: `${monthStr}-31`,
+      end_date: getMonthEnd(monthStr),
     });
     expect(apiMock.getCategories).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="expense-item-exp-1"]')).not.toBeNull();
@@ -63,7 +69,7 @@ describe('Expenses page regressions', () => {
     const monthStr = new Date().toISOString().slice(0, 7);
     expect(apiMock.exportCSV).toHaveBeenCalledWith({
       start_date: `${monthStr}-01`,
-      end_date: `${monthStr}-31`,
+      end_date: getMonthEnd(monthStr),
     });
     expect(toastMock.success).toHaveBeenCalledWith('CSV exported successfully');
   });

@@ -119,12 +119,33 @@ const tooltipModule = {
   TooltipContent: ({ children }) => React.createElement('div', null, children),
 };
 
+const SelectContext = React.createContext({ value: '', onValueChange: () => {} });
+
 const selectModule = {
-  Select: ({ children }) => React.createElement('div', null, children),
+  Select: ({ value, onValueChange, children }) =>
+    React.createElement(
+      SelectContext.Provider,
+      { value: { value, onValueChange } },
+      React.createElement('div', null, children)
+    ),
   SelectTrigger: ({ children, ...props }) => React.createElement('button', { type: 'button', ...props }, children),
-  SelectValue: ({ placeholder }) => React.createElement('span', null, placeholder),
+  SelectValue: ({ placeholder }) =>
+    React.createElement(SelectContext.Consumer, null, (context) =>
+      React.createElement('span', null, context.value || placeholder)
+    ),
   SelectContent: ({ children }) => React.createElement('div', null, children),
-  SelectItem: ({ children, value }) => React.createElement('div', { 'data-value': value }, children),
+  SelectItem: ({ children, value }) =>
+    React.createElement(SelectContext.Consumer, null, (context) =>
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          'data-value': value,
+          onClick: () => context.onValueChange?.(value),
+        },
+        children
+      )
+    ),
 };
 
 const progressModule = {

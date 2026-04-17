@@ -51,6 +51,12 @@ function createSavings() {
   };
 }
 
+function getMonthEnd(monthStr) {
+  const [year, month] = monthStr.split('-').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${monthStr}-${String(lastDay).padStart(2, '0')}`;
+}
+
 describe('Budgets page regressions', () => {
   it('loads categories, month budgets, and month expenses on mount', async () => {
     apiMock.getCategories.mockResolvedValue({ data: createCategories() });
@@ -64,7 +70,7 @@ describe('Budgets page regressions', () => {
     expect(apiMock.getBudgets).toHaveBeenCalledWith({ month: monthStr });
     expect(apiMock.getExpenses).toHaveBeenCalledWith({
       start_date: `${monthStr}-01`,
-      end_date: `${monthStr}-31`,
+      end_date: getMonthEnd(monthStr),
     });
     expect(container.querySelector('[data-testid="budget-card-Food & Dining"]')).not.toBeNull();
   });

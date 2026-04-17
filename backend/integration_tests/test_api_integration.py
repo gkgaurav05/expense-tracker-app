@@ -26,10 +26,34 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from auth_logic import GENERIC_FORGOT_PASSWORD_MESSAGE
+import auth_logic
+import expense_logic
+import routes.admin as admin_module
+import routes.alerts as alerts_module
+import routes.budgets as budgets_module
+import routes.categories as categories_module
+import routes.dashboard as dashboard_module
+import routes.expenses as expenses_module
+import routes.insights as insights_module
+import routes.reports as reports_module
+import routes.savings as savings_module
 from server import app
 
 
 DB_NAME = os.environ["DB_NAME"]
+FIXED_UTC_NOW = datetime(2026, 4, 16, 12, 0, tzinfo=timezone.utc)
+
+
+class FrozenDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return FIXED_UTC_NOW.replace(tzinfo=None)
+        return FIXED_UTC_NOW.astimezone(tz)
+
+
+def fixed_date(days=0):
+    return (FIXED_UTC_NOW + timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 @pytest.fixture(scope="session")
@@ -64,6 +88,21 @@ def database(mongo_client, client):
     reset_application_state(database)
     yield database
     reset_application_state(database)
+
+
+@pytest.fixture(autouse=True)
+def freeze_utc_now(monkeypatch):
+    monkeypatch.setattr(auth_logic, "datetime", FrozenDateTime)
+    monkeypatch.setattr(expense_logic, "datetime", FrozenDateTime)
+    monkeypatch.setattr(admin_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(alerts_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(budgets_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(categories_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(dashboard_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(expenses_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(insights_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(reports_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(savings_module, "datetime", FrozenDateTime)
 
 
 def register_user(client, *, name="Alice", email="alice@example.com", password="secret123"):
@@ -208,7 +247,7 @@ def test_auth_forgot_password_unknown_email_stays_generic(client, database):
 
 def test_auth_reset_password_rejects_expired_tokens_and_deletes_record(client, database):
     user = register_user(client, email="alice@example.com")
-    expired_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    expired_time = (FIXED_UTC_NOW - timedelta(hours=2)).isoformat()
     database.password_resets.insert_one(
         {
             "user_id": user["user"]["id"],
@@ -236,7 +275,7 @@ def test_expenses_require_authentication(client):
 
 
 def test_expenses_crud_filters_and_ownership_are_enforced(client):
-    today = datetime.now(timezone.utc)
+    today = FIXED_UTC_NOW
     two_days_ago = (today - timedelta(days=2)).strftime("%Y-%m-%d")
     yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
     tomorrow = (today + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -330,7 +369,7 @@ def test_expenses_crud_filters_and_ownership_are_enforced(client):
 
 
 def test_expenses_bulk_import_skips_duplicates_and_future_dates(client, database):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     today = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
     two_days_ago = (now - timedelta(days=2)).strftime("%Y-%m-%d")
@@ -495,7 +534,7 @@ def test_categories_crud_scoping_duplicates_and_default_protection(client):
 
 
 def test_statement_upload_csv_preview_detects_duplicates_and_income(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     today = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -619,7 +658,7 @@ def test_statement_upload_html_fixture_parses_expense_and_income(client):
 
 
 def test_statement_apply_mappings_reuses_learned_payee_categories(client):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = fixed_date()
 
     user = register_user(client, email="alice@example.com")
     headers = auth_headers(user["access_token"])
@@ -725,7 +764,7 @@ def test_expenses_ai_categorization_returns_error_when_api_key_missing(client):
 
 
 def test_dashboard_summary_monthly_excludes_income_and_uses_month_budgets(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
     today = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -793,7 +832,7 @@ def test_dashboard_summary_monthly_excludes_income_and_uses_month_budgets(client
 
 
 def test_dashboard_summary_weekly_uses_current_week_range_and_excludes_income(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
     week_start_date = now - timedelta(days=now.weekday())
     week_start = week_start_date.strftime("%Y-%m-%d")
@@ -851,7 +890,7 @@ def test_dashboard_summary_weekly_uses_current_week_range_and_excludes_income(cl
 
 
 def test_alerts_and_reports_exclude_income_and_export_respects_filters(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
     month_start = now.replace(day=1).strftime("%Y-%m-%d")
     today = now.strftime("%Y-%m-%d")
@@ -946,8 +985,8 @@ def test_reports_and_alerts_reject_invalid_month_format(client):
 
 
 def test_admin_routes_require_admin_role_and_return_stats_and_activity(client, database):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    today = fixed_date()
+    current_month = FIXED_UTC_NOW.strftime("%Y-%m")
 
     user = register_user(client, name="User", email="user@example.com")
     admin = register_user(client, name="Admin", email="admin@example.com")
@@ -1018,7 +1057,7 @@ def test_admin_routes_require_authentication_and_reject_invalid_tokens(client):
 
 
 def test_savings_returns_budget_vs_spent_breakdown_and_excludes_income(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
     today = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1058,7 +1097,7 @@ def test_savings_returns_budget_vs_spent_breakdown_and_excludes_income(client):
 
 
 def test_savings_is_user_scoped(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
     today = now.strftime("%Y-%m-%d")
 
@@ -1082,7 +1121,7 @@ def test_savings_is_user_scoped(client):
 
 
 def test_insights_returns_message_when_no_expenses(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
 
     user = register_user(client, email="alice@example.com")
@@ -1094,7 +1133,7 @@ def test_insights_returns_message_when_no_expenses(client):
 
 
 def test_insights_calls_openai_and_returns_insights(client):
-    now = datetime.now(timezone.utc)
+    now = FIXED_UTC_NOW
     current_month = now.strftime("%Y-%m")
     today = now.strftime("%Y-%m-%d")
 
@@ -1144,7 +1183,7 @@ def test_insights_rejects_invalid_month_format(client):
 
 
 def test_payee_mappings_returns_user_scoped_mappings(client):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = fixed_date()
 
     alice = register_user(client, email="alice@example.com")
     bob = register_user(client, email="bob@example.com")
@@ -1216,7 +1255,7 @@ def test_reset_password_rejects_invalid_token(client):
 
 
 def test_create_expense_rejects_future_date(client):
-    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = fixed_date(1)
 
     user = register_user(client, email="alice@example.com")
     headers = auth_headers(user["access_token"])
@@ -1246,8 +1285,8 @@ def test_dashboard_rejects_invalid_month_format(client):
 
 
 def test_export_csv_without_filters_returns_all_user_expenses(client):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = fixed_date()
+    yesterday = fixed_date(-1)
 
     user = register_user(client, email="alice@example.com")
     headers = auth_headers(user["access_token"])

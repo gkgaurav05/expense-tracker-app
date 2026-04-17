@@ -80,19 +80,27 @@ describe('AddExpenseModal regressions', () => {
     apiMock.createExpense.mockResolvedValue({});
     const onSuccess = jest.fn();
     const onOpenChange = jest.fn();
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     const { container } = await renderComponent(
       <AddExpenseModal open={true} onOpenChange={onOpenChange} categories={categories} onSuccess={onSuccess} />
     );
 
     await changeInput(container.querySelector('[data-testid="expense-amount-input"]'), '500');
-    // Manually set category state via the select — since select is mocked, set hidden input
-    // The real flow uses Select onValueChange, but mock doesn't trigger state updates
-    // So we test that the form validates correctly
+    await click(Array.from(container.querySelectorAll('[data-value]')).find((item) => item.textContent.includes('Food & Dining')));
     await submit(container.querySelector('form'));
+    await flushPromises(3);
 
-    // Without category selected, it should still fail validation
-    expect(toastMock.error).toHaveBeenCalledWith('Please fill amount and category');
+    expect(apiMock.createExpense).toHaveBeenCalledWith({
+      amount: 500,
+      category: 'Food & Dining',
+      description: '',
+      date: todayStr,
+    });
+    expect(toastMock.success).toHaveBeenCalledWith('Expense added');
+    expect(onSuccess).toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('shows error toast when update expense API fails', async () => {
