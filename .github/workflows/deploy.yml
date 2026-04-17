@@ -215,7 +215,11 @@ jobs:
 
       - name: List downloaded reports
         if: always()
-        run: find reports -name '*.xml' -exec echo "Found: {}" \; -exec head -1 {} \;
+        run: |
+          find reports -name '*.xml' | while read f; do
+            echo "Found: $f"
+            head -1 "$f"
+          done
 
       - name: Frontend Test Report
         if: always()
