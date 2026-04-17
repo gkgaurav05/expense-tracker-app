@@ -201,8 +201,9 @@ jobs:
     if: always() && github.event.inputs.skip_tests != 'true'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
+      actions: read
       checks: write
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -212,6 +213,10 @@ jobs:
         with:
           path: reports
 
+      - name: List downloaded reports
+        if: always()
+        run: find reports -name '*.xml' -exec echo "Found: {}" \; -exec head -1 {} \;
+
       - name: Frontend Test Report
         if: always()
         uses: dorny/test-reporter@v1
@@ -220,6 +225,7 @@ jobs:
           path: reports/frontend-test-report/frontend-report.xml
           reporter: jest-junit
           fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Backend Regression Report
         if: always()
@@ -229,6 +235,7 @@ jobs:
           path: reports/backend-regression-report/backend-regression-report.xml
           reporter: java-junit
           fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Backend Integration Report
         if: always()
@@ -238,6 +245,7 @@ jobs:
           path: reports/backend-test-report/backend-report.xml
           reporter: java-junit
           fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   docker-build-check:
     name: Docker Build Check
