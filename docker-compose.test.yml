@@ -27,6 +27,7 @@ services:
       SMTP_PASSWORD: integration-test
       FROM_EMAIL: noreply@example.com
       APP_URL: http://localhost:3000
+      PYTHONPATH: /app
     volumes:
       - ./reports:/app/reports
     command: pytest -q tests/ --junitxml=reports/backend-regression-report.xml
