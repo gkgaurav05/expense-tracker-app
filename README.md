@@ -130,29 +130,40 @@ In development mode, edit files in `backend/` and `frontend/src/` -- changes ref
 
 ## Automated Testing
 
-Run the frontend regression suite:
+**127 total tests** across 3 Docker-backed suites. All suites generate JUnit XML reports in `./reports/` for CI integration.
+
+### Frontend Regression Suite (84 tests, 19 suites)
 
 ```bash
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
 docker compose -f docker-compose.test.yml down -v
 ```
 
-Run the backend regression suite:
+Covers: Login (6), Register (7), Dashboard (8), Expenses (7), Budgets (6), Admin (3), ForgotPassword (2), ResetPassword (1), Sidebar (6), AddExpenseModal (10), UploadStatementModal (3), ProtectedRoute (3), AuthContext (3), App routing (8), plus utility tests for apiBase, dashboardPeriod, expenseExport, statementImport, authValidation.
+
+Report: `reports/frontend-report.xml`
+
+### Backend Regression Suite (9 tests)
 
 ```bash
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
 docker compose -f docker-compose.test.yml down -v
 ```
 
-Run the backend API integration suite against a real MongoDB container:
+Covers: auth logic (email normalization, user record building, token expiry), expense logic (income exclusion, export query building, future date validation).
+
+Report: `reports/backend-regression-report.xml`
+
+### Backend Integration Suite (34 tests)
 
 ```bash
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
 docker compose -f docker-compose.test.yml down -v
 ```
 
-This integration suite uses FastAPI's `TestClient` inside the backend container, so it exercises the real APIs without requiring FastAPI dependencies on your host machine.
-It currently covers auth, categories, expenses, AI categorization, statement upload/import flows across CSV/HTML/PDF branches, budgets, dashboard summaries, budget alerts, CSV/monthly reports, and admin stats/activity authorization.
+Runs against a real MongoDB container using FastAPI's `TestClient`. Covers: auth (register, login, forgot/reset password, wrong password, invalid tokens), expenses (CRUD, filters, ownership, future date validation), bulk import (duplicates, future dates, income), budgets (CRUD, month scoping, user isolation), categories (CRUD, duplicates, default protection), statement upload (CSV, PDF, HTML, AI fallback, password-protected), payee mappings (user-scoped), dashboard (monthly, weekly, income exclusion), alerts and reports (income exclusion, category/date filters, CSV export), savings (budget vs spent breakdown, user scoping), insights (OpenAI mock, no-data handling, invalid month), admin (role-based access, stats, activity).
+
+Report: `reports/backend-report.xml`
 
 ---
 
@@ -216,10 +227,15 @@ spendrax/
 |   +-- database.py             # MongoDB client & db instance
 |   +-- models.py               # Pydantic request models
 |   +-- auth.py                 # JWT utilities, password hashing, get_current_user, get_admin_user
+|   +-- auth_logic.py           # Pure auth helpers (user record, token, email normalization)
+|   +-- expense_logic.py        # Pure expense helpers (income filter, export query, date validation)
 |   +-- email_utils.py          # SMTP email sending for password reset
 |   +-- requirements.txt        # Python dependencies
-|   +-- integration_tests/      # Docker-backed API integration tests
-|   |   +-- test_api_integration.py  # Auth, categories, expenses, budgets, reports, admin end-to-end checks
+|   +-- tests/                  # Unit tests (auth logic, expense logic regressions)
+|   |   +-- test_auth_logic.py
+|   |   +-- test_regressions.py
+|   +-- integration_tests/      # Docker-backed API integration tests (34 tests)
+|   |   +-- test_api_integration.py  # Auth, expenses, budgets, categories, reports, savings, insights, admin
 |   +-- parsers/                # Bank statement parsing module
 |   |   +-- __init__.py         # Module exports
 |   |   +-- csv_parser.py       # CSV statement parser
@@ -252,7 +268,17 @@ spendrax/
         +-- index.css           # Design system CSS variables
         +-- lib/
         |   +-- api.js          # API client + INR formatter
+        |   +-- apiBase.js      # API base URL with env fallback
+        |   +-- router.js       # Re-exports from react-router-dom
+        |   +-- authValidation.js    # Form validation helpers
+        |   +-- dashboardPeriod.js   # Week range calculation (backend-first)
+        |   +-- expenseExport.js     # Export param builder (month + category)
+        |   +-- statementImport.js   # Transaction filtering and import helpers
         |   +-- utils.js        # shadcn utility
+        +-- test/               # Test utilities and mocks
+        |   +-- testUtils.js    # renderComponent, flushPromises, click, submit helpers
+        |   +-- moduleMocks.js  # Centralized mocks for API, router, UI components
+        +-- setupTests.js       # Jest setup (window polyfills, cleanup, mock resets)
         +-- context/
         |   +-- AuthContext.js  # Auth state management (user, token, login/logout)
         +-- pages/
