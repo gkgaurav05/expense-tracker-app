@@ -27,7 +27,9 @@ services:
       SMTP_PASSWORD: integration-test
       FROM_EMAIL: noreply@example.com
       APP_URL: http://localhost:3000
-    command: python -m unittest discover -s tests
+    volumes:
+      - ./reports:/app/reports
+    command: pytest -q tests/ --junitxml=reports/backend-regression-report.xml
 
   mongo-test:
     image: mongo:7
