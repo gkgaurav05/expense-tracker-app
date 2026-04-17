@@ -5,6 +5,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api, formatINR } from '@/lib/api';
+import {
+  buildImportExpenses,
+  getAutoExcludedIndices,
+  splitTransactionsByType,
+  sumIncludedAmounts,
+} from '@/lib/statementImport';
 import { toast } from 'sonner';
 
 const AMOUNT_FILTERS = [
@@ -280,13 +286,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
       setTransactions(txns);
 
       // Auto-exclude income transactions, reversal pairs, and duplicates by default
-      const autoExcludeIndices = new Set();
-      txns.forEach((t, idx) => {
-        if (t.type === 'income' || t.is_reversal || t.is_duplicate) {
-          autoExcludeIndices.add(idx);
-        }
-      });
-      setExcludedIndices(autoExcludeIndices);
+      setExcludedIndices(getAutoExcludedIndices(txns));
 
       setStep('preview');
       setProcessingStep(null);
@@ -476,7 +476,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
 
   const handleImport = async () => {
     // Only import transactions that are not excluded
-    const toImport = transactions.filter((_, idx) => !excludedIndices.has(idx));
+    const toImport = buildImportExpenses(transactions, excludedIndices);
     if (toImport.length === 0) {
       toast.error('No transactions selected for import');
       return;
@@ -484,14 +484,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     setImporting(true);
 
     try {
-      const expenses = toImport.map(t => ({
-        amount: t.amount,
-        category: t.category,
-        description: t.description,
-        date: t.date,
-        type: t.type || 'expense'
-      }));
-      const { data } = await api.createBulkExpenses(expenses);
+      const { data } = await api.createBulkExpenses(toImport);
       // Build toast message with all relevant info
       let toastMsg = `Imported ${data.created} transactions`;
       if (data.skipped_duplicates > 0) {
@@ -511,20 +504,17 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
   };
 
   // Separate expenses and income with their original indices
-  const expenseTransactions = useMemo(() => {
-    return transactions.map((t, idx) => ({ ...t, originalIdx: idx })).filter(t => t.type !== 'income');
-  }, [transactions]);
-
-  const incomeTransactions = useMemo(() => {
-    return transactions.map((t, idx) => ({ ...t, originalIdx: idx })).filter(t => t.type === 'income');
-  }, [transactions]);
+  const { expenseTransactions, incomeTransactions } = useMemo(
+    () => splitTransactionsByType(transactions),
+    [transactions]
+  );
 
   // Calculate totals for included (not excluded) transactions
   const includedExpenses = expenseTransactions.filter(t => !excludedIndices.has(t.originalIdx));
   const includedIncome = incomeTransactions.filter(t => !excludedIndices.has(t.originalIdx));
 
-  const totalExpenses = includedExpenses.reduce((sum, t) => sum + t.amount, 0);
-  const totalIncome = includedIncome.reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = sumIncludedAmounts(expenseTransactions, excludedIndices);
+  const totalIncome = sumIncludedAmounts(incomeTransactions, excludedIndices);
   const expenseCount = expenseTransactions.length;
   const incomeCount = incomeTransactions.length;
   const includedExpenseCount = includedExpenses.length;

@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -21,83 +21,101 @@ jobs:
   # ============================================
   # BUILD & TEST
   # ============================================
-  test-frontend:
-    name: Test Frontend
+  frontend-checks:
+    name: Frontend Regressions
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.skip_tests != 'true' }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Docker-backed frontend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
+
+      - name: Upload frontend test report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+          name: frontend-test-report
+          path: reports/frontend-report.xml
+          retention-days: 30
 
-      - name: Install dependencies
-        run: |
-          cd frontend
-          yarn install --frozen-lockfile
+      - name: Tear down frontend regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
-      - name: Run linter
-        run: |
-          cd frontend
-          yarn lint || true  # Don't fail on lint warnings
-
-      - name: Run tests
-        run: |
-          cd frontend
-          yarn test --watchAll=false --passWithNoTests
-
-      - name: Build check
-        run: |
-          cd frontend
-          yarn build
-
-  test-backend:
-    name: Test Backend
+  backend-regressions:
+    name: Backend Regressions
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.skip_tests != 'true' }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Run Docker-backed backend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
+
+      - name: Tear down regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  backend-integration:
+    name: Backend Integration
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Docker-backed backend integration suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
+
+      - name: Upload backend test report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: backend/requirements.txt
+          name: backend-test-report
+          path: reports/backend-report.xml
+          retention-days: 30
 
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+      - name: Tear down integration stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
-      - name: Run linter
-        run: |
-          cd backend
-          pip install ruff
-          ruff check . || true  # Don't fail on lint warnings
+  docker-build-check:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
 
-      - name: Run tests
-        run: |
-          cd backend
-          python -m pytest -q || true  # Pass if no tests yet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t spendrax-backend:test ./backend
+
+      - name: Build frontend image
+        run: docker build -t spendrax-frontend:test ./frontend
 
   # ============================================
   # DEPLOY TO EC2 VIA ALB
   # ============================================
   deploy:
     name: Deploy to Production
-    needs: [test-frontend, test-backend]
+    needs: [frontend-checks, backend-regressions, backend-integration, docker-build-check]
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
       github.event_name != 'pull_request' &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped')
+      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
+      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
+      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
+      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped')
     runs-on: ubuntu-latest
 
     steps:

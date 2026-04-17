@@ -5,62 +5,47 @@ on:
     branches: [main, dev]
 
 jobs:
-  lint-and-test:
-    name: Lint & Test
+  frontend-checks:
+    name: Frontend Regressions
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+      - name: Run Docker-backed frontend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
 
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          yarn install --frozen-lockfile
+      - name: Tear down frontend regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
-      - name: Lint frontend
-        run: |
-          cd frontend
-          yarn lint || true  # Don't fail on lint warnings
+  backend-regressions:
+    name: Backend Regressions
+    runs-on: ubuntu-latest
 
-      - name: Build frontend
-        run: |
-          cd frontend
-          yarn build
-        env:
-          CI: false  # Prevent treating warnings as errors
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Run frontend tests
-        run: |
-          cd frontend
-          yarn test --watchAll=false --passWithNoTests
+      - name: Run Docker-backed backend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Tear down regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
-      - name: Install backend dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio flake8
+  backend-integration:
+    name: Backend Integration
+    runs-on: ubuntu-latest
 
-      - name: Lint backend
-        run: |
-          cd backend
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Run backend tests
-        run: |
-          cd backend
-          python -m pytest --ignore=tests/ -q || true
+      - name: Run Docker-backed backend integration suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
+
+      - name: Tear down integration stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
   docker-build:
     name: Docker Build Check
@@ -70,9 +55,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build backend image
-        run: |
-          docker build -t spendrax-backend:test ./backend
+        run: docker build -t spendrax-backend:test ./backend
 
       - name: Build frontend image
-        run: |
-          docker build -t spendrax-frontend:test ./frontend
+        run: docker build -t spendrax-frontend:test ./frontend

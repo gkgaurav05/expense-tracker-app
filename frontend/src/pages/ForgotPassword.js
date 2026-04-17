@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, Mail, ArrowLeft, CheckCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { Link } from '@/lib/router';
 import { toast } from 'sonner';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };

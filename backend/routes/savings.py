@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from database import db
 from auth import get_current_user
+from expense_logic import filter_spending_transactions
 
 router = APIRouter()
 
@@ -54,6 +55,7 @@ async def get_savings_summary(months: Optional[int] = 6, current_user: dict = De
         {"user_id": user_id, "date": {"$gte": start_date, "$lt": end_date}, "type": {"$ne": "income"}},
         {"_id": 0}
     ).to_list(10000)
+    expenses = filter_spending_transactions(expenses)
 
     # Build expense lookup: {month: {category: amount}}
     expense_map = {}

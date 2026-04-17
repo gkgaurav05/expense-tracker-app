@@ -128,6 +128,34 @@ In development mode, edit files in `backend/` and `frontend/src/` -- changes ref
 
 ---
 
+## Automated Testing
+
+Run the frontend regression suite:
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
+docker compose -f docker-compose.test.yml down -v
+```
+
+Run the backend regression suite:
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
+docker compose -f docker-compose.test.yml down -v
+```
+
+Run the backend API integration suite against a real MongoDB container:
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
+docker compose -f docker-compose.test.yml down -v
+```
+
+This integration suite uses FastAPI's `TestClient` inside the backend container, so it exercises the real APIs without requiring FastAPI dependencies on your host machine.
+It currently covers auth, categories, expenses, AI categorization, statement upload/import flows across CSV/HTML/PDF branches, budgets, dashboard summaries, budget alerts, CSV/monthly reports, and admin stats/activity authorization.
+
+---
+
 ## Stopping the App
 
 ```bash
@@ -176,6 +204,7 @@ docker compose down -v
 spendrax/
 +-- docker-compose.yml          # Production orchestration
 +-- docker-compose.dev.yml      # Development orchestration
++-- docker-compose.test.yml     # Docker-backed frontend/backend regression + integration tests
 +-- .dockerignore
 |
 +-- backend/
@@ -189,6 +218,8 @@ spendrax/
 |   +-- auth.py                 # JWT utilities, password hashing, get_current_user, get_admin_user
 |   +-- email_utils.py          # SMTP email sending for password reset
 |   +-- requirements.txt        # Python dependencies
+|   +-- integration_tests/      # Docker-backed API integration tests
+|   |   +-- test_api_integration.py  # Auth, categories, expenses, budgets, reports, admin end-to-end checks
 |   +-- parsers/                # Bank statement parsing module
 |   |   +-- __init__.py         # Module exports
 |   |   +-- csv_parser.py       # CSV statement parser

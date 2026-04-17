@@ -7,6 +7,7 @@ import io
 
 from database import db
 from auth import get_current_user
+from expense_logic import build_category_totals, build_expense_export_query, sum_transaction_amounts
 
 router = APIRouter()
 
@@ -40,10 +41,8 @@ async def get_monthly_report(month: Optional[str] = None, current_user: dict = D
         {"user_id": user_id, "date": {"$gte": start, "$lt": end}, "type": {"$ne": "income"}}, {"_id": 0}
     ).to_list(10000)
 
-    total = sum(e["amount"] for e in expenses)
-    category_totals = {}
-    for e in expenses:
-        category_totals[e["category"]] = category_totals.get(e["category"], 0) + e["amount"]
+    total = sum_transaction_amounts(expenses)
+    category_totals = build_category_totals(expenses)
 
     categories = await db.categories.find(
         {"$or": [{"is_default": True}, {"user_id": user_id}]},
@@ -98,16 +97,7 @@ async def export_expenses_csv(
     category: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    query = {"user_id": current_user["id"]}
-    if start_date or end_date:
-        date_q = {}
-        if start_date:
-            date_q["$gte"] = start_date
-        if end_date:
-            date_q["$lte"] = end_date
-        query["date"] = date_q
-    if category:
-        query["category"] = category
+    query = build_expense_export_query(current_user["id"], start_date=start_date, end_date=end_date, category=category)
 
     expenses = await db.expenses.find(query, {"_id": 0}).sort("date", -1).to_list(10000)
 

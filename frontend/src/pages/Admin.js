@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Users, Receipt, PiggyBank, TrendingUp, Calendar, Activity, ShieldX } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { useNavigate } from '@/lib/navigation';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };

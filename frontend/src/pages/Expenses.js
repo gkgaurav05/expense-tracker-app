@@ -4,6 +4,7 @@ import { Plus, Trash2, Receipt, Filter, Pencil, Download, ChevronLeft, ChevronRi
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { api, formatINR } from '@/lib/api';
+import { buildExpenseExportParams } from '@/lib/expenseExport';
 import { toast } from 'sonner';
 import { format, addMonths, subMonths } from 'date-fns';
 import AddExpenseModal from '@/components/AddExpenseModal';
@@ -28,11 +29,7 @@ export default function Expenses() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {
-        start_date: `${monthStr}-01`,
-        end_date: `${monthStr}-31`,
-      };
-      if (filter !== 'all') params.category = filter;
+      const params = buildExpenseExportParams(monthStr, filter);
       const [expRes, catRes] = await Promise.all([
         api.getExpenses(params),
         api.getCategories(),
@@ -68,11 +65,7 @@ export default function Expenses() {
 
   const handleExportCSV = async () => {
     try {
-      const params = {
-        start_date: `${monthStr}-01`,
-        end_date: `${monthStr}-31`,
-      };
-      if (filter !== 'all') params.category = filter;
+      const params = buildExpenseExportParams(monthStr, filter);
       const { data } = await api.exportCSV(params);
       const url = window.URL.createObjectURL(new Blob([data]));
       const a = document.createElement('a');
