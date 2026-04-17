@@ -105,196 +105,196 @@ jobs:
   # ============================================
   # DEPLOY TO EC2 VIA ALB
   # ============================================
-  deploy:
-    name: Deploy to Production
-    needs: [frontend-checks, backend-regressions, backend-integration, docker-build-check]
-    if: |
-      always() &&
-      github.ref == 'refs/heads/main' &&
-      github.event_name != 'pull_request' &&
-      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
-      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
-      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
-      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped')
-    runs-on: ubuntu-latest
+  # deploy:
+  #   name: Deploy to Production
+  #   needs: [frontend-checks, backend-regressions, backend-integration, docker-build-check]
+  #   if: |
+  #     always() &&
+  #     github.ref == 'refs/heads/main' &&
+  #     github.event_name != 'pull_request' &&
+  #     (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
+  #     (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
+  #     (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
+  #     (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped')
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Configure SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+  #     - name: Configure SSH
+  #       run: |
+  #         mkdir -p ~/.ssh
+  #         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+  #         chmod 600 ~/.ssh/deploy_key
 
-          # SSH config for jump host (if configured)
-          cat >> ~/.ssh/config << EOF
-          Host jump-host
-            HostName ${{ secrets.JUMP_HOST }}
-            User ${{ secrets.JUMP_HOST_USER || 'ec2-user' }}
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking no
+  #         # SSH config for jump host (if configured)
+  #         cat >> ~/.ssh/config << EOF
+  #         Host jump-host
+  #           HostName ${{ secrets.JUMP_HOST }}
+  #           User ${{ secrets.JUMP_HOST_USER || 'ec2-user' }}
+  #           IdentityFile ~/.ssh/deploy_key
+  #           StrictHostKeyChecking no
 
-          Host ec2-target
-            HostName ${{ secrets.EC2_HOST }}
-            User ec2-user
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking no
-            ${{ secrets.JUMP_HOST && 'ProxyJump jump-host' || '' }}
-          EOF
+  #         Host ec2-target
+  #           HostName ${{ secrets.EC2_HOST }}
+  #           User ec2-user
+  #           IdentityFile ~/.ssh/deploy_key
+  #           StrictHostKeyChecking no
+  #           ${{ secrets.JUMP_HOST && 'ProxyJump jump-host' || '' }}
+  #         EOF
 
-          chmod 600 ~/.ssh/config
+  #         chmod 600 ~/.ssh/config
 
-      - name: Deploy Application
-        run: |
-          # Determine SSH target (direct or via jump host)
-          if [ -n "${{ secrets.JUMP_HOST }}" ]; then
-            SSH_TARGET="ec2-target"
-            echo "Deploying via jump host: ${{ secrets.JUMP_HOST }}"
-          else
-            SSH_TARGET="ec2-user@${{ secrets.EC2_HOST }}"
-            ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-            echo "Deploying directly to: ${{ secrets.EC2_HOST }}"
-          fi
+  #     - name: Deploy Application
+  #       run: |
+  #         # Determine SSH target (direct or via jump host)
+  #         if [ -n "${{ secrets.JUMP_HOST }}" ]; then
+  #           SSH_TARGET="ec2-target"
+  #           echo "Deploying via jump host: ${{ secrets.JUMP_HOST }}"
+  #         else
+  #           SSH_TARGET="ec2-user@${{ secrets.EC2_HOST }}"
+  #           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+  #           echo "Deploying directly to: ${{ secrets.EC2_HOST }}"
+  #         fi
 
-          ssh -i ~/.ssh/deploy_key $SSH_TARGET << 'ENDSSH'
-            set -e
+  #         ssh -i ~/.ssh/deploy_key $SSH_TARGET << 'ENDSSH'
+  #           set -e
 
-            echo "=========================================="
-            echo "  SPENDRAX DEPLOYMENT"
-            echo "  $(date)"
-            echo "=========================================="
+  #           echo "=========================================="
+  #           echo "  SPENDRAX DEPLOYMENT"
+  #           echo "  $(date)"
+  #           echo "=========================================="
 
-            cd /opt/spendrax
+  #           cd /opt/spendrax
 
-            # Save current commit for rollback
-            PREVIOUS_COMMIT=$(git rev-parse HEAD)
-            echo "Previous commit: $PREVIOUS_COMMIT"
+  #           # Save current commit for rollback
+  #           PREVIOUS_COMMIT=$(git rev-parse HEAD)
+  #           echo "Previous commit: $PREVIOUS_COMMIT"
 
-            echo ""
-            echo "=== Step 1: Pull Latest Code ==="
-            git fetch origin main
-            git reset --hard origin/main
-            NEW_COMMIT=$(git rev-parse HEAD)
-            echo "New commit: $NEW_COMMIT"
+  #           echo ""
+  #           echo "=== Step 1: Pull Latest Code ==="
+  #           git fetch origin main
+  #           git reset --hard origin/main
+  #           NEW_COMMIT=$(git rev-parse HEAD)
+  #           echo "New commit: $NEW_COMMIT"
 
-            echo ""
-            echo "=== Step 2: Build Containers ==="
-            docker compose -f docker-compose.prod.yml build --parallel
+  #           echo ""
+  #           echo "=== Step 2: Build Containers ==="
+  #           docker compose -f docker-compose.prod.yml build --parallel
 
-            echo ""
-            echo "=== Step 3: Stop Old Containers ==="
-            docker compose -f docker-compose.prod.yml down
+  #           echo ""
+  #           echo "=== Step 3: Stop Old Containers ==="
+  #           docker compose -f docker-compose.prod.yml down
 
-            echo ""
-            echo "=== Step 4: Start New Containers ==="
-            docker compose -f docker-compose.prod.yml up -d
+  #           echo ""
+  #           echo "=== Step 4: Start New Containers ==="
+  #           docker compose -f docker-compose.prod.yml up -d
 
-            echo ""
-            echo "=== Step 5: Wait for Services ==="
-            sleep 15
+  #           echo ""
+  #           echo "=== Step 5: Wait for Services ==="
+  #           sleep 15
 
-            echo ""
-            echo "=== Step 6: Health Check ==="
-            # Check backend health
-            if curl -sf http://localhost:8001/api/health > /dev/null 2>&1; then
-              echo "Backend health check: PASSED"
-            elif curl -sf http://localhost:8001/docs > /dev/null 2>&1; then
-              echo "Backend health check: PASSED (via /docs)"
-            else
-              echo "Backend health check: FAILED"
-              echo "Rolling back to $PREVIOUS_COMMIT..."
-              git reset --hard $PREVIOUS_COMMIT
-              docker compose -f docker-compose.prod.yml up -d --build
-              exit 1
-            fi
+  #           echo ""
+  #           echo "=== Step 6: Health Check ==="
+  #           # Check backend health
+  #           if curl -sf http://localhost:8001/api/health > /dev/null 2>&1; then
+  #             echo "Backend health check: PASSED"
+  #           elif curl -sf http://localhost:8001/docs > /dev/null 2>&1; then
+  #             echo "Backend health check: PASSED (via /docs)"
+  #           else
+  #             echo "Backend health check: FAILED"
+  #             echo "Rolling back to $PREVIOUS_COMMIT..."
+  #             git reset --hard $PREVIOUS_COMMIT
+  #             docker compose -f docker-compose.prod.yml up -d --build
+  #             exit 1
+  #           fi
 
-            # Check frontend
-            if curl -sf http://localhost:80 > /dev/null 2>&1 || curl -sf http://localhost:3000 > /dev/null 2>&1; then
-              echo "Frontend health check: PASSED"
-            else
-              echo "Frontend health check: WARNING (may still be starting)"
-            fi
+  #           # Check frontend
+  #           if curl -sf http://localhost:80 > /dev/null 2>&1 || curl -sf http://localhost:3000 > /dev/null 2>&1; then
+  #             echo "Frontend health check: PASSED"
+  #           else
+  #             echo "Frontend health check: WARNING (may still be starting)"
+  #           fi
 
-            echo ""
-            echo "=== Step 7: Cleanup ==="
-            docker image prune -f
-            docker volume prune -f || true
+  #           echo ""
+  #           echo "=== Step 7: Cleanup ==="
+  #           docker image prune -f
+  #           docker volume prune -f || true
 
-            echo ""
-            echo "=== Container Status ==="
-            docker compose -f docker-compose.prod.yml ps
+  #           echo ""
+  #           echo "=== Container Status ==="
+  #           docker compose -f docker-compose.prod.yml ps
 
-            echo ""
-            echo "=========================================="
-            echo "  DEPLOYMENT SUCCESSFUL"
-            echo "=========================================="
-          ENDSSH
+  #           echo ""
+  #           echo "=========================================="
+  #           echo "  DEPLOYMENT SUCCESSFUL"
+  #           echo "=========================================="
+  #         ENDSSH
 
-      - name: Verify via ALB
-        if: ${{ secrets.ALB_DNS_NAME != '' }}
-        run: |
-          echo "Waiting for ALB health check..."
-          sleep 10
+  #     - name: Verify via ALB
+  #       if: ${{ secrets.ALB_DNS_NAME != '' }}
+  #       run: |
+  #         echo "Waiting for ALB health check..."
+  #         sleep 10
 
-          ALB_URL="http://${{ secrets.ALB_DNS_NAME }}"
-          echo "Checking ALB endpoint: $ALB_URL"
+  #         ALB_URL="http://${{ secrets.ALB_DNS_NAME }}"
+  #         echo "Checking ALB endpoint: $ALB_URL"
 
-          # Retry up to 5 times
-          for i in {1..5}; do
-            if curl -sf "$ALB_URL" > /dev/null 2>&1; then
-              echo "ALB health check: PASSED"
-              exit 0
-            fi
-            echo "Attempt $i/5 failed, retrying in 10s..."
-            sleep 10
-          done
+  #         # Retry up to 5 times
+  #         for i in {1..5}; do
+  #           if curl -sf "$ALB_URL" > /dev/null 2>&1; then
+  #             echo "ALB health check: PASSED"
+  #             exit 0
+  #           fi
+  #           echo "Attempt $i/5 failed, retrying in 10s..."
+  #           sleep 10
+  #         done
 
-          echo "ALB health check: FAILED (app may still be starting)"
-          # Don't fail the workflow - ALB target group will handle unhealthy instances
+  #         echo "ALB health check: FAILED (app may still be starting)"
+  #         # Don't fail the workflow - ALB target group will handle unhealthy instances
 
-      - name: Deployment Summary
-        if: always()
-        run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ALB URL | http://${{ secrets.ALB_DNS_NAME }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+  #     - name: Deployment Summary
+  #       if: always()
+  #       run: |
+  #         echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
+  #         echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+  #         echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+  #         echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+  #         echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+  #         echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+  #         echo "| ALB URL | http://${{ secrets.ALB_DNS_NAME }} |" >> $GITHUB_STEP_SUMMARY
+  #         echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "### Status: Deployed Successfully" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### Status: Deployment Failed" >> $GITHUB_STEP_SUMMARY
-          fi
+  #         if [ "${{ job.status }}" == "success" ]; then
+  #           echo "### Status: Deployed Successfully" >> $GITHUB_STEP_SUMMARY
+  #         else
+  #           echo "### Status: Deployment Failed" >> $GITHUB_STEP_SUMMARY
+  #         fi
 
-  # ============================================
-  # NOTIFICATIONS
-  # ============================================
-  notify-success:
-    name: Notify Success
-    needs: deploy
-    if: success()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Success Notification
-        run: |
-          echo "Deployment successful!"
-          echo "App URL: http://${{ secrets.ALB_DNS_NAME }}"
-          # Add Slack/Teams notification here if needed
+  # # ============================================
+  # # NOTIFICATIONS
+  # # ============================================
+  # notify-success:
+  #   name: Notify Success
+  #   needs: deploy
+  #   if: success()
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Success Notification
+  #       run: |
+  #         echo "Deployment successful!"
+  #         echo "App URL: http://${{ secrets.ALB_DNS_NAME }}"
+  #         # Add Slack/Teams notification here if needed
 
-  notify-failure:
-    name: Notify Failure
-    needs: deploy
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Failure Notification
-        run: |
-          echo "Deployment FAILED!"
-          echo "Check the workflow logs for details."
-          # Add Slack/Teams notification here if needed
+  # notify-failure:
+  #   name: Notify Failure
+  #   needs: deploy
+  #   if: failure()
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Failure Notification
+  #       run: |
+  #         echo "Deployment FAILED!"
+  #         echo "Check the workflow logs for details."
+  #         # Add Slack/Teams notification here if needed
