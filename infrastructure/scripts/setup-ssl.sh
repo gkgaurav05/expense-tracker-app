@@ -1,5 +1,6 @@
 #!/bin/bash
-# SSL Certificate Setup using Let's Encrypt
+# Legacy custom-domain SSL helper using Let's Encrypt.
+# This is not used in the current ALB-DNS-over-HTTP deployment flow.
 # Usage: ./setup-ssl.sh yourdomain.com your@email.com
 
 set -e

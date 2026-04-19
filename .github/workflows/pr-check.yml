@@ -5,6 +5,31 @@ on:
     branches: [main, dev]
 
 jobs:
+  terraform-checks:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check Terraform formatting
+        run: |
+          terraform fmt -check -recursive infrastructure/terraform
+          terraform fmt -check -recursive infrastructure/terraform/IAM
+
+      - name: Validate main Terraform root
+        run: |
+          terraform -chdir=infrastructure/terraform init -backend=false -input=false
+          terraform -chdir=infrastructure/terraform validate
+
+      - name: Validate IAM Terraform root
+        run: |
+          terraform -chdir=infrastructure/terraform/IAM init -backend=false -input=false
+          terraform -chdir=infrastructure/terraform/IAM validate
+
   frontend-checks:
     name: Frontend Regressions
     runs-on: ubuntu-latest

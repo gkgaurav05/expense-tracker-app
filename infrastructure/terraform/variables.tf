@@ -34,7 +34,7 @@ variable "allowed_ssh_cidr" {
 }
 
 variable "domain_name" {
-  description = "Domain name for the application (optional)"
+  description = "Legacy custom domain setting. Currently unused in the ALB-DNS-over-HTTP deployment flow."
   type        = string
   default     = ""
 }
@@ -54,7 +54,7 @@ variable "documentdb_password" {
 variable "documentdb_instance_class" {
   description = "DocumentDB instance class"
   type        = string
-  default     = "db.t3.medium"  # Smallest available for DocumentDB
+  default     = "db.t3.medium" # Smallest available for DocumentDB
 }
 
 variable "jwt_secret_key" {
@@ -68,4 +68,10 @@ variable "openai_api_key" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+variable "artifact_retention_days" {
+  description = "How long deployment bundles should be retained in S3"
+  type        = number
+  default     = 30
 }

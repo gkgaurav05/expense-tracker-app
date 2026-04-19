@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 import os
 import logging
 from pathlib import Path
@@ -128,12 +129,12 @@ async def health_check():
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
-        return {
+        return JSONResponse(status_code=503, content={
             "status": "unhealthy",
             "database": "disconnected",
             "error": str(e),
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        })
 
 app.include_router(api_router)
 

@@ -61,6 +61,17 @@ resource "aws_iam_role_policy" "ec2_policy" {
       {
         Effect = "Allow"
         Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.deployment_artifacts.arn,
+          "${aws_s3_bucket.deployment_artifacts.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "ecr:GetAuthorizationToken",
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
@@ -70,6 +81,11 @@ resource "aws_iam_role_policy" "ec2_policy" {
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ssm_managed_core" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # IAM Instance Profile
@@ -99,7 +115,6 @@ resource "aws_instance" "app" {
     mongo_url      = "mongodb://${var.documentdb_username}:${var.documentdb_password}@${aws_docdb_cluster.main.endpoint}:27017/${var.project_name}_db?tls=false&retryWrites=false&directConnection=true"
     jwt_secret_key = var.jwt_secret_key
     openai_api_key = var.openai_api_key
-    domain_name    = var.domain_name
   }))
 
   tags = {

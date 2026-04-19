@@ -23,6 +23,11 @@ output "alb_dns_name" {
   value       = aws_lb.app.dns_name
 }
 
+output "deployment_artifacts_bucket" {
+  description = "S3 bucket used by GitHub Actions to upload application release bundles"
+  value       = aws_s3_bucket.deployment_artifacts.id
+}
+
 output "security_group_id" {
   description = "Security Group ID"
   value       = aws_security_group.app.id
