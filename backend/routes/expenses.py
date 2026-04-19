@@ -22,6 +22,7 @@ import logging
 from database import db
 from models import ExpenseCreate
 from auth import get_current_user
+from expense_logic import ensure_not_future_date
 
 # Import parsers
 from parsers import (
@@ -263,6 +264,10 @@ async def get_expenses(
 
 @router.put("/expenses/{expense_id}")
 async def update_expense(expense_id: str, data: ExpenseCreate, current_user: dict = Depends(get_current_user)):
+    try:
+        ensure_not_future_date(data.date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     result = await db.expenses.update_one(
         {"id": expense_id, "user_id": current_user["id"]},
         {"$set": {"amount": data.amount, "category": data.category, "description": data.description, "date": data.date}}

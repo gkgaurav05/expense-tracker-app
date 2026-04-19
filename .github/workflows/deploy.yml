@@ -2,281 +2,588 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       skip_tests:
-        description: 'Skip tests (emergency deploy)'
+        description: Skip tests (emergency use only)
         required: false
-        default: 'false'
+        default: "false"
+        type: boolean
+      apply_infrastructure:
+        description: Apply Terraform infrastructure
+        required: false
+        default: "true"
+        type: boolean
+      deploy_application:
+        description: Deploy the application bundle to EC2
+        required: false
+        default: "true"
         type: boolean
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
-  APP_DIR: /opt/spendrax
-  DOCKER_COMPOSE_FILE: docker-compose.prod.yml
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'prod/terraform.tfstate' }}
+  TF_VAR_environment: ${{ vars.TF_VAR_ENVIRONMENT || 'prod' }}
+  TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
+  TF_VAR_key_pair_name: ${{ vars.TF_VAR_KEY_PAIR_NAME }}
+  TF_VAR_allowed_ssh_cidr: ${{ vars.TF_VAR_ALLOWED_SSH_CIDR }}
+  TF_VAR_documentdb_password: ${{ secrets.TF_VAR_DOCUMENTDB_PASSWORD }}
+  TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY }}
+  TF_VAR_openai_api_key: ${{ secrets.TF_VAR_OPENAI_API_KEY }}
 
 jobs:
-  # ============================================
-  # BUILD & TEST
-  # ============================================
-  test-frontend:
-    name: Test Frontend
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      infra_changed: ${{ steps.filter.outputs.infrastructure }}
+      app_changed: ${{ steps.filter.outputs.application }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect infrastructure and application changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            infrastructure:
+              - 'infrastructure/**'
+              - 'docker-compose.prod.yml'
+              - '.github/workflows/deploy.yml'
+            application:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docker-compose.prod.yml'
+              - 'infrastructure/scripts/deploy.sh'
+
+  frontend-checks:
+    name: Frontend Regressions
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.skip_tests != 'true' }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Docker-backed frontend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
+
+      - name: Upload frontend test report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+          name: frontend-test-report
+          path: reports/frontend-report.xml
+          retention-days: 30
 
-      - name: Install dependencies
+      - name: Generate summary
+        if: always()
         run: |
-          cd frontend
-          yarn install --frozen-lockfile
+          if [ -f reports/frontend-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/frontend-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/frontend-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/frontend-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/frontend-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
 
-      - name: Run linter
-        run: |
-          cd frontend
-          yarn lint || true  # Don't fail on lint warnings
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
 
-      - name: Run tests
-        run: |
-          cd frontend
-          yarn test --watchAll=false --passWithNoTests
-
-      - name: Build check
-        run: |
-          cd frontend
-          yarn build
-
-  test-backend:
-    name: Test Backend
-    runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.skip_tests != 'true' }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: backend/requirements.txt
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
-
-      - name: Run linter
-        run: |
-          cd backend
-          pip install ruff
-          ruff check . || true  # Don't fail on lint warnings
-
-      - name: Run tests
-        run: |
-          cd backend
-          python -m pytest -q || true  # Pass if no tests yet
-
-  # ============================================
-  # DEPLOY TO EC2 VIA ALB
-  # ============================================
-  deploy:
-    name: Deploy to Production
-    needs: [test-frontend, test-backend]
-    if: |
-      always() &&
-      github.ref == 'refs/heads/main' &&
-      github.event_name != 'pull_request' &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped')
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-
-          # SSH config for jump host (if configured)
-          cat >> ~/.ssh/config << EOF
-          Host jump-host
-            HostName ${{ secrets.JUMP_HOST }}
-            User ${{ secrets.JUMP_HOST_USER || 'ec2-user' }}
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking no
-
-          Host ec2-target
-            HostName ${{ secrets.EC2_HOST }}
-            User ec2-user
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking no
-            ${{ secrets.JUMP_HOST && 'ProxyJump jump-host' || '' }}
-          EOF
-
-          chmod 600 ~/.ssh/config
-
-      - name: Deploy Application
-        run: |
-          # Determine SSH target (direct or via jump host)
-          if [ -n "${{ secrets.JUMP_HOST }}" ]; then
-            SSH_TARGET="ec2-target"
-            echo "Deploying via jump host: ${{ secrets.JUMP_HOST }}"
+            echo "## Frontend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
           else
-            SSH_TARGET="ec2-user@${{ secrets.EC2_HOST }}"
-            ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-            echo "Deploying directly to: ${{ secrets.EC2_HOST }}"
+            echo "## Frontend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — tests may not have run." >> $GITHUB_STEP_SUMMARY
           fi
 
-          ssh -i ~/.ssh/deploy_key $SSH_TARGET << 'ENDSSH'
-            set -e
+      - name: Tear down frontend regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
-            echo "=========================================="
-            echo "  SPENDRAX DEPLOYMENT"
-            echo "  $(date)"
-            echo "=========================================="
+  backend-regressions:
+    name: Backend Regressions
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
 
-            cd /opt/spendrax
+    steps:
+      - uses: actions/checkout@v4
 
-            # Save current commit for rollback
-            PREVIOUS_COMMIT=$(git rev-parse HEAD)
-            echo "Previous commit: $PREVIOUS_COMMIT"
+      - name: Create reports directory
+        run: mkdir -p reports
 
-            echo ""
-            echo "=== Step 1: Pull Latest Code ==="
-            git fetch origin main
-            git reset --hard origin/main
-            NEW_COMMIT=$(git rev-parse HEAD)
-            echo "New commit: $NEW_COMMIT"
+      - name: Run Docker-backed backend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
 
-            echo ""
-            echo "=== Step 2: Build Containers ==="
-            docker compose -f docker-compose.prod.yml build --parallel
+      - name: Upload backend regression report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-regression-report
+          path: reports/backend-regression-report.xml
+          retention-days: 30
 
-            echo ""
-            echo "=== Step 3: Stop Old Containers ==="
-            docker compose -f docker-compose.prod.yml down
-
-            echo ""
-            echo "=== Step 4: Start New Containers ==="
-            docker compose -f docker-compose.prod.yml up -d
-
-            echo ""
-            echo "=== Step 5: Wait for Services ==="
-            sleep 15
-
-            echo ""
-            echo "=== Step 6: Health Check ==="
-            # Check backend health
-            if curl -sf http://localhost:8001/api/health > /dev/null 2>&1; then
-              echo "Backend health check: PASSED"
-            elif curl -sf http://localhost:8001/docs > /dev/null 2>&1; then
-              echo "Backend health check: PASSED (via /docs)"
-            else
-              echo "Backend health check: FAILED"
-              echo "Rolling back to $PREVIOUS_COMMIT..."
-              git reset --hard $PREVIOUS_COMMIT
-              docker compose -f docker-compose.prod.yml up -d --build
-              exit 1
-            fi
-
-            # Check frontend
-            if curl -sf http://localhost:80 > /dev/null 2>&1 || curl -sf http://localhost:3000 > /dev/null 2>&1; then
-              echo "Frontend health check: PASSED"
-            else
-              echo "Frontend health check: WARNING (may still be starting)"
-            fi
-
-            echo ""
-            echo "=== Step 7: Cleanup ==="
-            docker image prune -f
-            docker volume prune -f || true
-
-            echo ""
-            echo "=== Container Status ==="
-            docker compose -f docker-compose.prod.yml ps
-
-            echo ""
-            echo "=========================================="
-            echo "  DEPLOYMENT SUCCESSFUL"
-            echo "=========================================="
-          ENDSSH
-
-      - name: Verify via ALB
-        if: ${{ secrets.ALB_DNS_NAME != '' }}
+      - name: Generate summary
+        if: always()
         run: |
-          echo "Waiting for ALB health check..."
-          sleep 10
+          if [ -f reports/backend-regression-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/backend-regression-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/backend-regression-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/backend-regression-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/backend-regression-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
 
-          ALB_URL="http://${{ secrets.ALB_DNS_NAME }}"
-          echo "Checking ALB endpoint: $ALB_URL"
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
 
-          # Retry up to 5 times
-          for i in {1..5}; do
-            if curl -sf "$ALB_URL" > /dev/null 2>&1; then
-              echo "ALB health check: PASSED"
+            echo "## Backend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Backend Regression Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — tests may not have run." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Tear down regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  backend-integration:
+    name: Backend Integration
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Docker-backed backend integration suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
+
+      - name: Upload backend test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: reports/backend-report.xml
+          retention-days: 30
+
+      - name: Generate summary
+        if: always()
+        run: |
+          if [ -f reports/backend-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/backend-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/backend-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/backend-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/backend-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
+
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
+
+            echo "## Backend Integration Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Backend Integration Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — tests may not have run." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Tear down integration stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  test-report:
+    name: Test Reports
+    needs: [frontend-checks, backend-regressions, backend-integration, smoke-test]
+    if: always() && github.event.inputs.skip_tests != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all test reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      - name: List downloaded reports
+        if: always()
+        run: |
+          find reports -name '*.xml' | while read f; do
+            echo "Found: $f"
+            head -1 "$f"
+          done
+
+      - name: Frontend Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Frontend Regressions (88 tests)
+          path: reports/frontend-test-report/frontend-report.xml
+          reporter: jest-junit
+          fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend Regression Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Regressions (9 tests)
+          path: reports/backend-regression-report/backend-regression-report.xml
+          reporter: java-junit
+          fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend Integration Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Integration (34 tests)
+          path: reports/backend-test-report/backend-report.xml
+          reporter: java-junit
+          fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Smoke Tests (1 test)
+          path: reports/smoke-test-report/smoke-report.xml
+          reporter: java-junit
+          fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build-check:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t spendrax-backend:test ./backend
+
+      - name: Build frontend image
+        run: docker build -t spendrax-frontend:test ./frontend
+
+  smoke-test:
+    name: Smoke Test
+    needs: [frontend-checks, backend-regressions, backend-integration, docker-build-check]
+    runs-on: ubuntu-latest
+    if: |
+      github.event.inputs.skip_tests != 'true' &&
+      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
+      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
+      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
+      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Docker-backed smoke suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from smoke-test smoke-test
+
+      - name: Upload smoke test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-report
+          path: reports/smoke-report.xml
+          retention-days: 30
+
+      - name: Generate summary
+        if: always()
+        run: |
+          if [ -f reports/smoke-report.xml ]; then
+            TESTS=$(grep -oP 'tests="\K[0-9]+' reports/smoke-report.xml | head -1)
+            FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/smoke-report.xml | head -1)
+            ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/smoke-report.xml | head -1)
+            TIME=$(grep -oP 'time="\K[0-9.]+' reports/smoke-report.xml | head -1)
+            PASSED=$((TESTS - FAILURES - ERRORS))
+
+            if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+              STATUS="All Passed"
+            else
+              STATUS="$FAILURES failed, $ERRORS errors"
+            fi
+
+            echo "## Smoke Tests" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Status | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Smoke Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Report not generated — smoke tests may not have run." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Tear down smoke stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  terraform-apply:
+    name: Terraform Apply
+    needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test]
+    if: |
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        needs.detect-changes.outputs.infra_changed == 'true' ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_infrastructure == 'true')
+      ) &&
+      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
+      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
+      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
+      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
+      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Bootstrap Terraform backend
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
+          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
+
+          ./infrastructure/scripts/bootstrap-tf-backend.sh "${STATE_BUCKET}" "${LOCK_TABLE}" "${AWS_REGION}"
+
+          echo "STATE_BUCKET=${STATE_BUCKET}" >> "$GITHUB_ENV"
+          echo "LOCK_TABLE=${LOCK_TABLE}" >> "$GITHUB_ENV"
+
+      - name: Terraform init
+        run: |
+          terraform -chdir=infrastructure/terraform init \
+            -input=false \
+            -reconfigure \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=${LOCK_TABLE}"
+
+      - name: Terraform plan
+        run: terraform -chdir=infrastructure/terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        run: terraform -chdir=infrastructure/terraform apply -input=false -auto-approve tfplan
+
+      - name: Terraform summary
+        if: always()
+        run: |
+          echo "## Terraform Apply" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| State bucket | ${STATE_BUCKET} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Lock table | ${LOCK_TABLE} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-application:
+    name: Deploy Application
+    needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test, terraform-apply]
+    if: |
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      (
+        needs.detect-changes.outputs.app_changed == 'true' ||
+        needs.detect-changes.outputs.infra_changed == 'true' ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
+      ) &&
+      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
+      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
+      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
+      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
+      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') &&
+      (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Bootstrap Terraform backend
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
+          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
+
+          ./infrastructure/scripts/bootstrap-tf-backend.sh "${STATE_BUCKET}" "${LOCK_TABLE}" "${AWS_REGION}"
+
+          echo "STATE_BUCKET=${STATE_BUCKET}" >> "$GITHUB_ENV"
+          echo "LOCK_TABLE=${LOCK_TABLE}" >> "$GITHUB_ENV"
+
+      - name: Terraform init
+        run: |
+          terraform -chdir=infrastructure/terraform init \
+            -input=false \
+            -reconfigure \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=${LOCK_TABLE}"
+
+      - name: Read deployment outputs
+        run: |
+          INSTANCE_ID=$(terraform -chdir=infrastructure/terraform output -raw instance_id)
+          ARTIFACT_BUCKET=$(terraform -chdir=infrastructure/terraform output -raw deployment_artifacts_bucket)
+          APP_URL=$(terraform -chdir=infrastructure/terraform output -raw app_url)
+
+          echo "INSTANCE_ID=${INSTANCE_ID}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}" >> "$GITHUB_ENV"
+          echo "APP_URL=${APP_URL}" >> "$GITHUB_ENV"
+
+      - name: Wait for EC2 status checks
+        run: aws ec2 wait instance-status-ok --instance-ids "${INSTANCE_ID}" --region "${AWS_REGION}"
+
+      - name: Wait for SSM connectivity
+        run: |
+          for attempt in $(seq 1 30); do
+            STATUS=$(aws ssm describe-instance-information \
+              --region "${AWS_REGION}" \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text 2>/dev/null || true)
+
+            if [ "${STATUS}" = "Online" ]; then
+              echo "SSM is online for ${INSTANCE_ID}"
               exit 0
             fi
-            echo "Attempt $i/5 failed, retrying in 10s..."
+
+            echo "Waiting for SSM agent to come online (attempt ${attempt}/30)"
             sleep 10
           done
 
-          echo "ALB health check: FAILED (app may still be starting)"
-          # Don't fail the workflow - ALB target group will handle unhealthy instances
+          echo "Timed out waiting for SSM connectivity on ${INSTANCE_ID}"
+          exit 1
 
-      - name: Deployment Summary
+      - name: Create release bundle
+        run: git archive --format=tar.gz --output=app-release.tar.gz "${GITHUB_SHA}"
+
+      - name: Upload release bundle to S3
+        run: |
+          RELEASE_KEY="releases/${GITHUB_SHA}-${GITHUB_RUN_ID}.tar.gz"
+          RELEASE_ID="${GITHUB_SHA::7}-${GITHUB_RUN_ID}"
+
+          aws s3 cp app-release.tar.gz "s3://${ARTIFACT_BUCKET}/${RELEASE_KEY}"
+
+          echo "RELEASE_KEY=${RELEASE_KEY}" >> "$GITHUB_ENV"
+          echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
+
+      - name: Deploy application via SSM
+        run: ./infrastructure/scripts/deploy.sh "${INSTANCE_ID}" "${ARTIFACT_BUCKET}" "${RELEASE_KEY}" "${RELEASE_ID}" "${AWS_REGION}"
+
+      - name: Verify deployed application health
+        run: |
+          ROOT_URL="${APP_URL}"
+          API_HEALTH_URL="${APP_URL}/api/health"
+
+          for attempt in $(seq 1 10); do
+            ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${ROOT_URL}" || true)
+            HEALTH_BODY=$(curl -fsS "${API_HEALTH_URL}" || true)
+
+            if [ "${ROOT_STATUS}" = "200" ] && echo "${HEALTH_BODY}" | grep -q '"status":"healthy"'; then
+              echo "Deployment health checks passed"
+              exit 0
+            fi
+
+            echo "Health check attempt ${attempt}/10 did not pass yet"
+            sleep 10
+          done
+
+          echo "Deployment health verification failed"
+          exit 1
+
+      - name: Deployment summary
         if: always()
         run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ALB URL | http://${{ secrets.ALB_DNS_NAME }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "### Status: Deployed Successfully" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### Status: Deployment Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  # ============================================
-  # NOTIFICATIONS
-  # ============================================
-  notify-success:
-    name: Notify Success
-    needs: deploy
-    if: success()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Success Notification
-        run: |
-          echo "Deployment successful!"
-          echo "App URL: http://${{ secrets.ALB_DNS_NAME }}"
-          # Add Slack/Teams notification here if needed
-
-  notify-failure:
-    name: Notify Failure
-    needs: deploy
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Failure Notification
-        run: |
-          echo "Deployment FAILED!"
-          echo "Check the workflow logs for details."
-          # Add Slack/Teams notification here if needed
+          echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${GITHUB_SHA}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Release | ${RELEASE_ID} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Instance ID | ${INSTANCE_ID} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifact bucket | ${ARTIFACT_BUCKET} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| App URL | ${APP_URL} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"

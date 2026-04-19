@@ -74,14 +74,16 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # HTTPS from ALB only
-  ingress {
-    description     = "HTTPS from ALB"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
+  # HTTPS from ALB is disabled for the current ALB-DNS-over-HTTP setup.
+  # Re-enable this block only if the EC2 host starts terminating HTTPS itself.
+  #
+  # ingress {
+  #   description     = "HTTPS from ALB"
+  #   from_port       = 443
+  #   to_port         = 443
+  #   protocol        = "tcp"
+  #   security_groups = [aws_security_group.alb.id]
+  # }
 
   # Frontend port from ALB
   ingress {

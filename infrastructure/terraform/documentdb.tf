@@ -69,7 +69,7 @@ resource "aws_docdb_cluster_parameter_group" "main" {
 
   parameter {
     name  = "tls"
-    value = "disabled"  # Disable TLS for simpler setup (enable in production)
+    value = "disabled" # Disable TLS for simpler setup (enable in production)
   }
 
   tags = {
@@ -89,7 +89,7 @@ resource "aws_docdb_cluster" "main" {
 
   backup_retention_period = 7
   preferred_backup_window = "03:00-04:00"
-  skip_final_snapshot     = true  # Set to false in production
+  skip_final_snapshot     = true # Set to false in production
 
   tags = {
     Name = "${var.project_name}-docdb-cluster"
