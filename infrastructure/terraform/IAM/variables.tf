@@ -1,4 +1,4 @@
-  variable "project_name" {
+variable "project_name" {
   description = "Project name for resource naming"
   type        = string
   default     = "spendrax"
