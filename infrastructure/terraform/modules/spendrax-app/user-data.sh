@@ -43,7 +43,7 @@ chown -R spendrax:spendrax /opt/spendrax
 # Store persistent environment separately from each release bundle
 cat > /opt/spendrax/shared/.env << ENVFILE
 MONGO_URL=${mongo_url}
-DB_NAME=spendrax_db
+DB_NAME=${database_name}
 CORS_ORIGINS=*
 JWT_SECRET_KEY=${jwt_secret_key}
 OPENAI_API_KEY=${openai_api_key}

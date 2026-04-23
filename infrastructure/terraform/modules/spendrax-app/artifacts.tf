@@ -3,10 +3,10 @@ data "aws_caller_identity" "current" {}
 resource "aws_s3_bucket" "deployment_artifacts" {
   bucket = "${var.project_name}-${var.environment}-deployments-${data.aws_caller_identity.current.account_id}"
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name        = "${var.project_name}-${var.environment}-deployments"
     Description = "Deployment bundles uploaded by GitHub Actions"
-  }
+  })
 }
 
 resource "aws_s3_bucket_versioning" "deployment_artifacts" {

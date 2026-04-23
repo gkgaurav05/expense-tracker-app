@@ -8,7 +8,7 @@ For a more detailed beginner-friendly walkthrough, see [AUTOMATED_WORKFLOW_DEPLO
 
 1. **AWS Account** with appropriate permissions
 2. **AWS CLI** installed and configured (`aws configure`)
-3. **Terraform** installed (v1.0+)
+3. **Terraform** installed (v1.7+)
 
 ## Architecture Overview
 
@@ -42,7 +42,7 @@ chmod 600 ~/.ssh/spendrax-key.pem
 ### Step 2: Configure Terraform Variables
 
 ```bash
-cd infrastructure/terraform
+cd infrastructure/terraform/envs/prod
 
 # Copy example file
 cp terraform.tfvars.example terraform.tfvars
@@ -69,7 +69,7 @@ You can manage that policy with Terraform from `infrastructure/terraform/IAM`, o
 
 ### Step 4: Add GitHub Repository Secrets And Variables
 
-Add these GitHub Actions secrets:
+Add these GitHub Actions secrets for the Terraform and deployment workflows:
 
 | Secret Name | Required | Description |
 |-------------|----------|-------------|
@@ -84,28 +84,30 @@ Add these GitHub Actions repository variables:
 | Variable Name | Required | Description |
 |---------------|----------|-------------|
 | `AWS_REGION` | Yes | AWS region, for example `ap-south-1` |
-| `TF_STATE_KEY` | No | Terraform state key, default `prod/terraform.tfstate` |
 | `TF_VAR_PROJECT_NAME` | No | Terraform value for `project_name`, default `spendrax` |
-| `TF_VAR_ENVIRONMENT` | No | Terraform value for `environment`, default `prod` |
-| `TF_VAR_KEY_PAIR_NAME` | Yes | Terraform value for `key_pair_name` |
-| `TF_VAR_ALLOWED_SSH_CIDR` | Yes | Terraform value for `allowed_ssh_cidr` |
+| `TF_VAR_KEY_PAIR_NAME` | No | Terraform value for `key_pair_name`, default `spendrax-key` |
+| `TF_VAR_ALLOWED_SSH_CIDR` | No | Terraform value for `allowed_ssh_cidr`, default `0.0.0.0/0` |
+| `TF_VAR_INSTANCE_TYPE` | No | Terraform value for `instance_type`, default `t3.small` |
+| `TERRAFORM_ENV` | No | App deployment environment root override, default `test` on the `test` branch and `prod` on `main` |
+
 ### Step 5: Trigger The Deployment Workflow
 
-The deployment workflow now does this automatically on `main`:
+Use the `Terraform Apply` workflow first when infrastructure must be created or updated. Choose `test`, `staging`, or `prod`, review the plan, then run it with `action=apply`.
+
+After infrastructure exists, the deployment workflow does this automatically on `test` and `main`:
 
 1. runs regression and integration tests
 2. runs a smoke test against real backend and frontend containers
-3. bootstraps the Terraform state bucket and lock table if needed
-4. applies infrastructure when infra files changed
-5. uploads a release bundle to S3
-6. deploys the bundle to EC2 through AWS Systems Manager (SSM)
-7. verifies application health after deployment
+3. initializes Terraform only to read deployment outputs from state
+4. uploads a release bundle to S3
+5. deploys the bundle to EC2 through AWS Systems Manager (SSM)
+6. verifies application health after deployment
 
 You can trigger it in either of these ways:
 
 ```bash
-# Option 1: push to main
-git push origin main
+# Option 1: push to test or main
+git push origin test
 
 # Option 2: run from GitHub Actions -> "CI/CD Pipeline" -> "Run workflow"
 ```
@@ -115,14 +117,16 @@ The application deploy no longer depends on manually SSH-ing into EC2 or cloning
 ### Step 6: Local Terraform Fallback (Optional)
 
 ```bash
+cd infrastructure/terraform/envs/test
+
 # Bootstrap backend state storage
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-../scripts/bootstrap-tf-backend.sh "spendrax-terraform-state-${ACCOUNT_ID}" "spendrax-terraform-locks" "ap-south-1"
+../../../scripts/bootstrap-tf-backend.sh "spendrax-terraform-state-${ACCOUNT_ID}" "spendrax-terraform-locks" "ap-south-1"
 
 # Initialize Terraform against the remote backend
 terraform init \
   -backend-config="bucket=spendrax-terraform-state-${ACCOUNT_ID}" \
-  -backend-config="key=prod/terraform.tfstate" \
+  -backend-config="key=test/terraform.tfstate" \
   -backend-config="region=ap-south-1" \
   -backend-config="encrypt=true" \
   -backend-config="dynamodb_table=spendrax-terraform-locks"
@@ -165,11 +169,18 @@ The old `setup-ssl.sh` script is left in the repo as a legacy helper for a futur
 ### Terraform
 
 ```bash
+# Use the matching environment root:
+cd infrastructure/terraform/envs/staging
+
+# Initialize with the environment backend
+terraform init -backend-config=backend.hcl
+
 # View current state
 terraform show
 
-# Destroy all resources (CAUTION!)
-terraform destroy
+# Destroy this environment (CAUTION!)
+terraform plan -destroy -out=destroy.tfplan
+terraform apply destroy.tfplan
 
 # Update infrastructure
 terraform apply
@@ -184,6 +195,8 @@ terraform apply
 # Trigger an application deploy over SSM after uploading a release bundle
 ./infrastructure/scripts/deploy.sh <instance-id> <artifact-bucket> <artifact-key> [release-id] [aws-region]
 ```
+
+See `infrastructure/terraform/README.md` for the full environment/module layout and `infrastructure/DESTROY.md` for the recommended destroy workflow.
 
 ### EC2 / Docker
 

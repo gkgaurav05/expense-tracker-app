@@ -2,7 +2,7 @@ name: PR Checks
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, test]
 
 jobs:
   terraform-checks:
@@ -17,13 +17,20 @@ jobs:
 
       - name: Check Terraform formatting
         run: |
-          terraform fmt -check -recursive infrastructure/terraform
+          terraform fmt -check -recursive infrastructure/terraform/bootstrap infrastructure/terraform/envs infrastructure/terraform/modules
           terraform fmt -check -recursive infrastructure/terraform/IAM
 
-      - name: Validate main Terraform root
+      - name: Validate bootstrap Terraform root
         run: |
-          terraform -chdir=infrastructure/terraform init -backend=false -input=false
-          terraform -chdir=infrastructure/terraform validate
+          terraform -chdir=infrastructure/terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=infrastructure/terraform/bootstrap validate
+
+      - name: Validate environment Terraform roots
+        run: |
+          for env in test staging prod; do
+            terraform -chdir="infrastructure/terraform/envs/${env}" init -backend=false -input=false
+            terraform -chdir="infrastructure/terraform/envs/${env}" validate
+          done
 
       - name: Validate IAM Terraform root
         run: |

@@ -12,11 +12,6 @@ on:
         required: false
         default: "false"
         type: boolean
-      apply_infrastructure:
-        description: Apply Terraform infrastructure
-        required: false
-        default: "true"
-        type: boolean
       deploy_application:
         description: Deploy the application bundle to EC2
         required: false
@@ -29,14 +24,8 @@ concurrency:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'prod/terraform.tfstate' }}
-  TF_VAR_environment: ${{ vars.TF_VAR_ENVIRONMENT || 'prod' }}
-  TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
-  TF_VAR_key_pair_name: ${{ vars.TF_VAR_KEY_PAIR_NAME }}
-  TF_VAR_allowed_ssh_cidr: ${{ vars.TF_VAR_ALLOWED_SSH_CIDR }}
-  TF_VAR_documentdb_password: ${{ secrets.TF_VAR_DOCUMENTDB_PASSWORD }}
-  TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY }}
-  TF_VAR_openai_api_key: ${{ secrets.TF_VAR_OPENAI_API_KEY }}
+  TERRAFORM_ENV: ${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
+  TF_WORKING_DIR: infrastructure/terraform/envs/${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
 
 jobs:
   detect-changes:
@@ -378,15 +367,15 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
-  terraform-apply:
-    name: Terraform Apply
+  deploy-application:
+    name: Deploy Application
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test]
     if: |
       github.event_name != 'pull_request' &&
-      github.ref == 'refs/heads/main' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
       (
-        needs.detect-changes.outputs.infra_changed == 'true' ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_infrastructure == 'true')
+        needs.detect-changes.outputs.app_changed == 'true' ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
       ) &&
       (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
       (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
@@ -394,7 +383,7 @@ jobs:
       (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
       (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'test' && 'test' || 'production' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -409,105 +398,18 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Bootstrap Terraform backend
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
-          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
-
-          ./infrastructure/scripts/bootstrap-tf-backend.sh "${STATE_BUCKET}" "${LOCK_TABLE}" "${AWS_REGION}"
-
-          echo "STATE_BUCKET=${STATE_BUCKET}" >> "$GITHUB_ENV"
-          echo "LOCK_TABLE=${LOCK_TABLE}" >> "$GITHUB_ENV"
-
       - name: Terraform init
         run: |
-          terraform -chdir=infrastructure/terraform init \
+          terraform -chdir="${TF_WORKING_DIR}" init \
             -input=false \
             -reconfigure \
-            -backend-config="bucket=${STATE_BUCKET}" \
-            -backend-config="key=${TF_STATE_KEY}" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="encrypt=true" \
-            -backend-config="dynamodb_table=${LOCK_TABLE}"
-
-      - name: Terraform plan
-        run: terraform -chdir=infrastructure/terraform plan -input=false -out=tfplan
-
-      - name: Terraform apply
-        run: terraform -chdir=infrastructure/terraform apply -input=false -auto-approve tfplan
-
-      - name: Terraform summary
-        if: always()
-        run: |
-          echo "## Terraform Apply" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| State bucket | ${STATE_BUCKET} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Lock table | ${LOCK_TABLE} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Status | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
-
-  deploy-application:
-    name: Deploy Application
-    needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test, terraform-apply]
-    if: |
-      github.event_name != 'pull_request' &&
-      github.ref == 'refs/heads/main' &&
-      (
-        needs.detect-changes.outputs.app_changed == 'true' ||
-        needs.detect-changes.outputs.infra_changed == 'true' ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
-      ) &&
-      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
-      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
-      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
-      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
-      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') &&
-      (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped')
-    runs-on: ubuntu-latest
-    environment: production
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Bootstrap Terraform backend
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
-          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
-
-          ./infrastructure/scripts/bootstrap-tf-backend.sh "${STATE_BUCKET}" "${LOCK_TABLE}" "${AWS_REGION}"
-
-          echo "STATE_BUCKET=${STATE_BUCKET}" >> "$GITHUB_ENV"
-          echo "LOCK_TABLE=${LOCK_TABLE}" >> "$GITHUB_ENV"
-
-      - name: Terraform init
-        run: |
-          terraform -chdir=infrastructure/terraform init \
-            -input=false \
-            -reconfigure \
-            -backend-config="bucket=${STATE_BUCKET}" \
-            -backend-config="key=${TF_STATE_KEY}" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="encrypt=true" \
-            -backend-config="dynamodb_table=${LOCK_TABLE}"
+            -backend-config=backend.hcl
 
       - name: Read deployment outputs
         run: |
-          INSTANCE_ID=$(terraform -chdir=infrastructure/terraform output -raw instance_id)
-          ARTIFACT_BUCKET=$(terraform -chdir=infrastructure/terraform output -raw deployment_artifacts_bucket)
-          APP_URL=$(terraform -chdir=infrastructure/terraform output -raw app_url)
+          INSTANCE_ID=$(terraform -chdir="${TF_WORKING_DIR}" output -raw instance_id)
+          ARTIFACT_BUCKET=$(terraform -chdir="${TF_WORKING_DIR}" output -raw deployment_artifacts_bucket)
+          APP_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw app_url)
 
           echo "INSTANCE_ID=${INSTANCE_ID}" >> "$GITHUB_ENV"
           echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}" >> "$GITHUB_ENV"
