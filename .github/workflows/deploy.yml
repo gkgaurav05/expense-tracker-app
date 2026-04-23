@@ -367,8 +367,8 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
-  deploy-application:
-    name: Deploy Application
+  check-infrastructure:
+    name: Check Infrastructure
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test]
     if: |
       github.event_name != 'pull_request' &&
@@ -382,6 +382,82 @@ jobs:
       (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
       (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
       (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check Terraform backend and outputs
+        id: check
+        run: |
+          set +e
+          terraform -chdir="${TF_WORKING_DIR}" init \
+            -input=false \
+            -reconfigure \
+            -backend-config=backend.hcl >/tmp/terraform-init.log 2>&1
+          INIT_STATUS=$?
+          set -e
+
+          if [ "${INIT_STATUS}" -ne 0 ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "## Deployment skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Terraform backend for \`${TERRAFORM_ENV}\` is not ready yet." >> "$GITHUB_STEP_SUMMARY"
+            echo "Run the \`Terraform Apply\` workflow for \`${TERRAFORM_ENV}\` first." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          set +e
+          INSTANCE_ID=$(terraform -chdir="${TF_WORKING_DIR}" output -raw instance_id 2>/tmp/terraform-instance-id.err)
+          INSTANCE_STATUS=$?
+          ARTIFACT_BUCKET=$(terraform -chdir="${TF_WORKING_DIR}" output -raw deployment_artifacts_bucket 2>/tmp/terraform-artifact-bucket.err)
+          ARTIFACT_STATUS=$?
+          APP_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw app_url 2>/tmp/terraform-app-url.err)
+          APP_URL_STATUS=$?
+          set -e
+
+          if [ "${INSTANCE_STATUS}" -ne 0 ] || [ "${ARTIFACT_STATUS}" -ne 0 ] || [ "${APP_URL_STATUS}" -ne 0 ] || [ -z "${INSTANCE_ID}" ] || [ -z "${ARTIFACT_BUCKET}" ] || [ -z "${APP_URL}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "## Deployment skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Terraform state for \`${TERRAFORM_ENV}\` does not have the required deployment outputs yet." >> "$GITHUB_STEP_SUMMARY"
+            echo "Run the \`Terraform Apply\` workflow for \`${TERRAFORM_ENV}\` first." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "## Infrastructure check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Infrastructure is available for \`${TERRAFORM_ENV}\`. Proceeding with application deployment." >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-application:
+    name: Deploy Application
+    needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test, check-infrastructure]
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
+      (
+        needs.detect-changes.outputs.app_changed == 'true' ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
+      ) &&
+      (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
+      (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
+      (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
+      (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
+      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') &&
+      needs.check-infrastructure.outputs.available == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'test' && 'test' || 'production' }}
 

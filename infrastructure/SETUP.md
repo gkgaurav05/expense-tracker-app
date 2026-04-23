@@ -98,10 +98,13 @@ After infrastructure exists, the deployment workflow does this automatically on 
 
 1. runs regression and integration tests
 2. runs a smoke test against real backend and frontend containers
-3. initializes Terraform only to read deployment outputs from state
-4. uploads a release bundle to S3
-5. deploys the bundle to EC2 through AWS Systems Manager (SSM)
-6. verifies application health after deployment
+3. checks whether the selected Terraform environment already has deployment outputs available
+4. initializes Terraform only to read deployment outputs from state
+5. uploads a release bundle to S3
+6. deploys the bundle to EC2 through AWS Systems Manager (SSM)
+7. verifies application health after deployment
+
+If infrastructure has not been created yet for that environment, the deployment job is skipped with a summary telling you to run `Terraform Apply` first.
 
 You can trigger it in either of these ways:
 
