@@ -4,6 +4,7 @@ import { PiggyBank, Save, Trash2, ChevronLeft, ChevronRight, CalendarDays, Targe
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, formatINR } from '@/lib/api';
+import { buildMonthDateRange } from '@/lib/expenseExport';
 import { toast } from 'sonner';
 import { format, addMonths, subMonths, getDaysInMonth, getDate } from 'date-fns';
 
@@ -39,7 +40,7 @@ export default function Budgets() {
       const [catRes, budRes, expRes] = await Promise.all([
         api.getCategories(),
         api.getBudgets({ month: monthStr }),
-        api.getExpenses({ start_date: `${monthStr}-01`, end_date: `${monthStr}-31` }),
+        api.getExpenses(buildMonthDateRange(monthStr)),
       ]);
       setCategories(catRes.data);
       setBudgets(budRes.data);

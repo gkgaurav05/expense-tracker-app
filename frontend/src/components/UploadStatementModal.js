@@ -5,6 +5,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api, formatINR } from '@/lib/api';
+import {
+  buildImportExpenses,
+  getAutoExcludedIndices,
+  splitTransactionsByType,
+  sumIncludedAmounts,
+} from '@/lib/statementImport';
 import { toast } from 'sonner';
 
 const AMOUNT_FILTERS = [
@@ -280,13 +286,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
       setTransactions(txns);
 
       // Auto-exclude income transactions, reversal pairs, and duplicates by default
-      const autoExcludeIndices = new Set();
-      txns.forEach((t, idx) => {
-        if (t.type === 'income' || t.is_reversal || t.is_duplicate) {
-          autoExcludeIndices.add(idx);
-        }
-      });
-      setExcludedIndices(autoExcludeIndices);
+      setExcludedIndices(getAutoExcludedIndices(txns));
 
       setStep('preview');
       setProcessingStep(null);
@@ -365,10 +365,14 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     setTransactions(prev => prev.map((t, i) => {
       if (i !== index) return t;
       const newType = t.type === 'expense' ? 'income' : 'expense';
+      // Preserve existing category, only default to Income/Uncategorized if not set
+      const newCategory = t.category && t.category !== 'Income' && t.category !== 'Uncategorized'
+        ? t.category
+        : (newType === 'income' ? 'Income' : 'Uncategorized');
       return {
         ...t,
         type: newType,
-        category: newType === 'income' ? 'Income' : 'Uncategorized',
+        category: newCategory,
         auto_categorized: false
       };
     }));
@@ -472,7 +476,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
 
   const handleImport = async () => {
     // Only import transactions that are not excluded
-    const toImport = transactions.filter((_, idx) => !excludedIndices.has(idx));
+    const toImport = buildImportExpenses(transactions, excludedIndices);
     if (toImport.length === 0) {
       toast.error('No transactions selected for import');
       return;
@@ -480,14 +484,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     setImporting(true);
 
     try {
-      const expenses = toImport.map(t => ({
-        amount: t.amount,
-        category: t.category,
-        description: t.description,
-        date: t.date,
-        type: t.type || 'expense'
-      }));
-      const { data } = await api.createBulkExpenses(expenses);
+      const { data } = await api.createBulkExpenses(toImport);
       // Build toast message with all relevant info
       let toastMsg = `Imported ${data.created} transactions`;
       if (data.skipped_duplicates > 0) {
@@ -507,20 +504,17 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
   };
 
   // Separate expenses and income with their original indices
-  const expenseTransactions = useMemo(() => {
-    return transactions.map((t, idx) => ({ ...t, originalIdx: idx })).filter(t => t.type !== 'income');
-  }, [transactions]);
-
-  const incomeTransactions = useMemo(() => {
-    return transactions.map((t, idx) => ({ ...t, originalIdx: idx })).filter(t => t.type === 'income');
-  }, [transactions]);
+  const { expenseTransactions, incomeTransactions } = useMemo(
+    () => splitTransactionsByType(transactions),
+    [transactions]
+  );
 
   // Calculate totals for included (not excluded) transactions
   const includedExpenses = expenseTransactions.filter(t => !excludedIndices.has(t.originalIdx));
   const includedIncome = incomeTransactions.filter(t => !excludedIndices.has(t.originalIdx));
 
-  const totalExpenses = includedExpenses.reduce((sum, t) => sum + t.amount, 0);
-  const totalIncome = includedIncome.reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = sumIncludedAmounts(expenseTransactions, excludedIndices);
+  const totalIncome = sumIncludedAmounts(incomeTransactions, excludedIndices);
   const expenseCount = expenseTransactions.length;
   const incomeCount = incomeTransactions.length;
   const includedExpenseCount = includedExpenses.length;
@@ -1073,8 +1067,17 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
 
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] text-[#A1A1AA] truncate" title={txn.description}>{txn.description || 'No description'}</p>
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <span className="text-[9px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">Income</span>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <Select value={txn.category} onValueChange={(val) => updateTransaction(txn.originalIdx, 'category', val)}>
+                                  <SelectTrigger className="h-5 w-28 text-[9px] bg-green-500/10 border-green-500/20 rounded text-green-400" onClick={(e) => e.stopPropagation()}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-[#171717] border-white/10 text-white">
+                                    {categoryOptions.map(cat => (
+                                      <SelectItem key={cat} value={cat} className="text-xs focus:bg-white/10">{cat}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                                 {isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 flex items-center gap-0.5"><Copy size={8} />Duplicate</span>}
                                 {isReversal && !isDuplicate && <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 flex items-center gap-0.5"><RotateCcw size={8} />Reversal</span>}
                               </div>
