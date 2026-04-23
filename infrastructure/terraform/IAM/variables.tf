@@ -4,13 +4,12 @@ variable "project_name" {
   default     = "spendrax"
 }
 
-
-<<<<<<< HEAD
 variable "create_user" {
   description = "Flag to create a new user"
   type        = bool
   default     = true
 }
+
 variable "create_access_key" {
   description = "Flag to create an access key for the deployer user"
   type        = bool
@@ -28,5 +27,3 @@ variable "deployer_user_name" {
   type        = string
   default     = "gaurav-test-user"
 }
-=======
->>>>>>> main
