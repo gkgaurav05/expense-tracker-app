@@ -18,6 +18,20 @@ instance.interceptors.request.use((config) => {
   return config;
 });
 
+const instance = axios.create({
+  baseURL: API,
+});
+
+// Add token to requests
+let authToken = localStorage.getItem('token');
+
+instance.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
+
 export const api = {
   // Auth
   setToken: (token) => {

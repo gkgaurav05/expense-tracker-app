@@ -5,6 +5,7 @@ variable "project_name" {
 }
 
 
+<<<<<<< HEAD
 variable "create_user" {
   description = "Flag to create a new user"
   type        = bool
@@ -27,3 +28,5 @@ variable "deployer_user_name" {
   type        = string
   default     = "gaurav-test-user"
 }
+=======
+>>>>>>> main
