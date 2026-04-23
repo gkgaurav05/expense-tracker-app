@@ -36,7 +36,7 @@ jobs:
       app_changed: ${{ steps.filter.outputs.application }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Detect infrastructure and application changes
         id: filter
@@ -59,7 +59,7 @@ jobs:
     if: ${{ github.event.inputs.skip_tests != 'true' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create reports directory
         run: mkdir -p reports
@@ -116,7 +116,7 @@ jobs:
     if: ${{ github.event.inputs.skip_tests != 'true' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create reports directory
         run: mkdir -p reports
@@ -173,7 +173,7 @@ jobs:
     if: ${{ github.event.inputs.skip_tests != 'true' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create reports directory
         run: mkdir -p reports
@@ -235,7 +235,7 @@ jobs:
       checks: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all test reports
         uses: actions/download-artifact@v4
@@ -296,7 +296,7 @@ jobs:
     if: ${{ github.event.inputs.skip_tests != 'true' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build backend image
         run: docker build -t spendrax-backend:test ./backend
@@ -316,7 +316,26 @@ jobs:
       (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped')
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        id: checkout_primary
+        uses: actions/checkout@v6
+        continue-on-error: true
+
+      - name: Wait before checkout retry
+        if: steps.checkout_primary.outcome == 'failure'
+        run: sleep 15
+
+      - name: Retry repository checkout
+        id: checkout_retry
+        if: steps.checkout_primary.outcome == 'failure'
+        uses: actions/checkout@v6
+        continue-on-error: true
+
+      - name: Stop when repository checkout fails
+        if: steps.checkout_primary.outcome != 'success' && steps.checkout_retry.outcome != 'success'
+        run: |
+          echo "GitHub checkout failed before smoke tests could start." >&2
+          exit 1
 
       - name: Create reports directory
         run: mkdir -p reports
@@ -325,7 +344,7 @@ jobs:
         run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from smoke-test smoke-test
 
       - name: Upload smoke test report
-        if: always()
+        if: always() && hashFiles('reports/smoke-report.xml') != ''
         uses: actions/upload-artifact@v4
         with:
           name: smoke-test-report
@@ -335,7 +354,10 @@ jobs:
       - name: Generate summary
         if: always()
         run: |
-          if [ -f reports/smoke-report.xml ]; then
+          if [ "${{ steps.checkout_primary.outcome }}" != "success" ] && [ "${{ steps.checkout_retry.outcome }}" != "success" ]; then
+            echo "## Smoke Tests" >> $GITHUB_STEP_SUMMARY
+            echo "Repository checkout failed before smoke tests could start. GitHub returned an error while fetching the workflow ref." >> $GITHUB_STEP_SUMMARY
+          elif [ -f reports/smoke-report.xml ]; then
             TESTS=$(grep -oP 'tests="\K[0-9]+' reports/smoke-report.xml | head -1)
             FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/smoke-report.xml | head -1)
             ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/smoke-report.xml | head -1)
@@ -364,7 +386,7 @@ jobs:
           fi
 
       - name: Tear down smoke stack
-        if: always()
+        if: always() && hashFiles('docker-compose.test.yml') != ''
         run: docker compose -f docker-compose.test.yml down -v
 
   check-infrastructure:
@@ -387,7 +409,7 @@ jobs:
       available: ${{ steps.check.outputs.available }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -462,7 +484,7 @@ jobs:
     environment: ${{ github.ref_name == 'test' && 'test' || 'production' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
