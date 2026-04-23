@@ -1,6 +1,9 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 import os
 import logging
 from pathlib import Path
@@ -11,8 +14,6 @@ from routes import auth, categories, expenses, budgets, dashboard, alerts, repor
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
-
-app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -35,7 +36,6 @@ DEFAULT_CATEGORIES = [
 
 # ── Startup Events ──────────────────────────────────────────────────
 
-@app.on_event("startup")
 async def migrate_budgets_add_month():
     """Add month field to any existing budgets that lack it."""
     current_month = datetime.now(timezone.utc).strftime("%Y-%m")
@@ -47,7 +47,6 @@ async def migrate_budgets_add_month():
         logger.info(f"Migrated {result.modified_count} budgets to month {current_month}")
 
 
-@app.on_event("startup")
 async def set_admin_users():
     """Set admin role for users specified in ADMIN_EMAILS env var (comma-separated)."""
     admin_emails = os.environ.get("ADMIN_EMAILS", "")
@@ -65,7 +64,6 @@ async def set_admin_users():
     if result.modified_count > 0:
         logger.info(f"Set admin role for {result.modified_count} users")
 
-@app.on_event("startup")
 async def seed_default_categories():
     """Seed default categories. Also adds any new default categories that don't exist yet."""
     existing = await db.categories.find({"is_default": True}, {"name": 1}).to_list(100)
@@ -87,6 +85,20 @@ async def seed_default_categories():
 
     if added > 0:
         logger.info(f"Added {added} new default categories")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await migrate_budgets_add_month()
+    await set_admin_users()
+    await seed_default_categories()
+    try:
+        yield
+    finally:
+        client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # ── Register Routers ────────────────────────────────────────────────
 
@@ -117,12 +129,12 @@ async def health_check():
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
-        return {
+        return JSONResponse(status_code=503, content={
             "status": "unhealthy",
             "database": "disconnected",
             "error": str(e),
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        })
 
 app.include_router(api_router)
 
@@ -135,9 +147,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ── Shutdown ────────────────────────────────────────────────────────
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

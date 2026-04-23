@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, Wallet, PiggyBank, ArrowRight, ChevronLeft, ChevronRight, CalendarDays, Hash, Download, Share2, Sparkles, ChevronDown, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { api, formatINR } from '@/lib/api';
+import { getDashboardWeekRange } from '@/lib/dashboardPeriod';
+import { useNavigate } from '@/lib/navigation';
 import { DailySpendingChart, CategoryPieChart } from '@/components/SpendingCharts';
 import BudgetAlerts from '@/components/BudgetAlerts';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
-import { format, addMonths, subMonths, startOfWeek, endOfWeek } from 'date-fns';
+import { format, addMonths, subMonths } from 'date-fns';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
 
@@ -44,9 +45,8 @@ export default function Dashboard() {
   const monthLabel = format(currentDate, 'MMMM yyyy');
   const isCurrentMonth = monthStr === format(new Date(), 'yyyy-MM');
 
-  // Weekly date range labels
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+  // Weekly date range labels — derived from backend response to avoid UTC vs local-time mismatch
+  const { weekStart, weekEnd } = getDashboardWeekRange(summary);
   const weekLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`;
 
   // Auto-switch to monthly view when navigating to past months

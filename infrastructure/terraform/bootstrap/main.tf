@@ -1,14 +1,34 @@
-# S3 Backend for Terraform State
-# This creates the S3 bucket and DynamoDB table for remote state management
+terraform {
+  required_version = ">= 1.7"
 
-# S3 Bucket for Terraform State
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Project   = var.project_name
+      ManagedBy = "terraform"
+      Stack     = "terraform-bootstrap"
+    }
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
 resource "aws_s3_bucket" "terraform_state" {
   bucket = "${var.project_name}-terraform-state-${data.aws_caller_identity.current.account_id}"
 
-  # Prevent accidental deletion (enable after initial setup)
-  # lifecycle {
-  #   prevent_destroy = true
-  # }
+  lifecycle {
+    prevent_destroy = true
+  }
 
   tags = {
     Name        = "${var.project_name}-terraform-state"
@@ -16,10 +36,6 @@ resource "aws_s3_bucket" "terraform_state" {
   }
 }
 
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}
-
-# Enable versioning for state history
 resource "aws_s3_bucket_versioning" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -28,7 +44,6 @@ resource "aws_s3_bucket_versioning" "terraform_state" {
   }
 }
 
-# Enable server-side encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -39,9 +54,15 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
   }
 }
 
-# Note: Public access block is managed at org/account level via SCP
+resource "aws_s3_bucket_public_access_block" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
 
-# DynamoDB table for state locking
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 resource "aws_dynamodb_table" "terraform_locks" {
   name         = "${var.project_name}-terraform-locks"
   billing_mode = "PAY_PER_REQUEST"
@@ -52,40 +73,32 @@ resource "aws_dynamodb_table" "terraform_locks" {
     type = "S"
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name        = "${var.project_name}-terraform-locks"
     Description = "Terraform state locking for Spendrax"
   }
 }
 
-# Outputs for backend configuration
 output "terraform_state_bucket" {
-  description = "S3 bucket name for Terraform state"
+  description = "S3 bucket name for Terraform state."
   value       = aws_s3_bucket.terraform_state.id
 }
 
-output "terraform_state_bucket_arn" {
-  description = "S3 bucket ARN for Terraform state"
-  value       = aws_s3_bucket.terraform_state.arn
-}
-
 output "terraform_locks_table" {
-  description = "DynamoDB table name for Terraform locks"
+  description = "DynamoDB table name for Terraform locks."
   value       = aws_dynamodb_table.terraform_locks.name
 }
 
-output "backend_config" {
-  description = "Backend configuration to add to provider.tf"
+output "backend_config_example" {
+  description = "Backend configuration values for environment backend.hcl files."
   value       = <<-EOT
-
-    # Add this to your provider.tf after initial setup:
-    backend "s3" {
-      bucket         = "${aws_s3_bucket.terraform_state.id}"
-      key            = "prod/terraform.tfstate"
-      region         = "${var.aws_region}"
-      encrypt        = true
-      dynamodb_table = "${aws_dynamodb_table.terraform_locks.name}"
-    }
-
+    bucket         = "${aws_s3_bucket.terraform_state.id}"
+    region         = "${var.aws_region}"
+    encrypt        = true
+    dynamodb_table = "${aws_dynamodb_table.terraform_locks.name}"
   EOT
 }

@@ -18,6 +18,7 @@ node_modules/
 
 # Testing
 /coverage
+/reports
 
 # Production builds
 /build
@@ -65,6 +66,8 @@ CLAUDE.md
 !*.tfvars.example
 .terraform/
 .terraform.lock.hcl
+!infrastructure/terraform/bootstrap/.terraform.lock.hcl
+!infrastructure/terraform/envs/**/.terraform.lock.hcl
 crash.log
 crash.*.log
 override.tf

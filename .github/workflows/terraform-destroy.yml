@@ -1,0 +1,103 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to destroy
+        required: true
+        type: choice
+        options:
+          - test
+          - staging
+          - prod
+      confirm_destroy:
+        description: Type destroy-<environment>, for example destroy-staging
+        required: true
+        type: string
+      allow_prod_destroy:
+        description: Required extra switch for production destroy
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  TF_INPUT: "false"
+  TF_IN_AUTOMATION: "true"
+  TF_WORKING_DIR: infrastructure/terraform/envs/${{ inputs.environment }}
+  TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
+  TF_VAR_key_pair_name: ${{ vars.TF_VAR_KEY_PAIR_NAME || 'spendrax-key' }}
+  TF_VAR_allowed_ssh_cidr: ${{ vars.TF_VAR_ALLOWED_SSH_CIDR || '0.0.0.0/0' }}
+  TF_VAR_instance_type: ${{ vars.TF_VAR_INSTANCE_TYPE || 't3.small' }}
+  TF_VAR_documentdb_password: ${{ secrets.TF_VAR_DOCUMENTDB_PASSWORD || secrets.DOCUMENTDB_PASSWORD }}
+  TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY || secrets.JWT_SECRET_KEY }}
+  TF_VAR_openai_api_key: ${{ secrets.TF_VAR_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+
+jobs:
+  destroy:
+    name: Destroy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Validate destroy guardrails
+        run: |
+          expected="destroy-${{ inputs.environment }}"
+          if [ "${{ inputs.confirm_destroy }}" != "$expected" ]; then
+            echo "confirm_destroy must be exactly: $expected"
+            exit 1
+          fi
+
+          if [ "${{ inputs.environment }}" = "prod" ] && [ "${{ inputs.allow_prod_destroy }}" != "true" ]; then
+            echo "Production destroy requires allow_prod_destroy=true."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.8
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive infrastructure/terraform/bootstrap infrastructure/terraform/envs infrastructure/terraform/modules
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform destroy plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -destroy -out=destroy.tfplan
+
+      - name: Destroy plan summary
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform show -no-color destroy.tfplan > destroy-plan.txt
+          {
+            echo "## Terraform destroy plan: ${{ inputs.environment }}"
+            echo ""
+            echo '```'
+            sed -n '1,220p' destroy-plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform destroy
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve destroy.tfplan

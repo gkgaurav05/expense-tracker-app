@@ -5,6 +5,7 @@ import calendar
 
 from database import db
 from auth import get_current_user
+from expense_logic import build_category_totals, sum_transaction_amounts
 
 router = APIRouter()
 
@@ -32,7 +33,7 @@ async def get_dashboard_summary(
         # Fetch weekly expenses (exclude income)
         expense_query = {"user_id": user_id, "date": {"$gte": week_start, "$lte": week_end}, "type": {"$ne": "income"}}
         expenses = await db.expenses.find(expense_query, {"_id": 0}).to_list(10000)
-        total_spent = sum(e["amount"] for e in expenses)
+        total_spent = sum_transaction_amounts(expenses)
 
         # Build daily spending for the week (7 days)
         daily_spending = []
@@ -44,10 +45,7 @@ async def get_dashboard_summary(
             daily_spending.append({"date": day_str, "label": day_label, "amount": day_total})
 
         # Category breakdown for the week
-        category_totals = {}
-        for e in expenses:
-            cat = e["category"]
-            category_totals[cat] = category_totals.get(cat, 0) + e["amount"]
+        category_totals = build_category_totals(expenses)
 
         # Get category colors
         categories = await db.categories.find(
@@ -109,7 +107,7 @@ async def get_dashboard_summary(
     expense_query = {"user_id": user_id, "date": {"$gte": month_start, "$lte": month_end}, "type": {"$ne": "income"}}
     monthly_expenses = await db.expenses.find(expense_query, {"_id": 0}).to_list(10000)
 
-    total_month = sum(e["amount"] for e in monthly_expenses)
+    total_month = sum_transaction_amounts(monthly_expenses)
 
     # Weekly total for current month
     if target_month == now.strftime("%Y-%m"):
@@ -119,10 +117,7 @@ async def get_dashboard_summary(
     else:
         total_week = 0
 
-    category_totals = {}
-    for e in monthly_expenses:
-        cat = e["category"]
-        category_totals[cat] = category_totals.get(cat, 0) + e["amount"]
+    category_totals = build_category_totals(monthly_expenses)
 
     budgets = await db.budgets.find({"user_id": user_id, "month": target_month}, {"_id": 0}).to_list(100)
     total_budget = sum(b["amount"] for b in budgets)

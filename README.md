@@ -25,12 +25,8 @@ A modern, full-stack expense tracking application built for students and profess
 - **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars, month navigation, and month summary card showing total budget/spent/remaining with days tracker for current month
 - **Budget History** -- Navigate to any previous month to view or set budgets; each month maintains its own budget configuration
 - **Budget Alerts** -- Real-time warnings when spending reaches 80% (Near Limit) or exceeds 100% (Over Budget) of category budgets, scoped to the selected month across Dashboard and Budgets pages
-- **Dashboard** -- Month-navigable overview with total monthly spend, weekly spend (current month) or avg/day (past months), budget remaining, daily spending bar chart, category pie chart, budget alerts, and recent expenses -- all scoped to the selected month
-- **Weekly/Monthly Summary** -- Period navigation with trend charts and category breakdown with percentage bars
-- **Savings Tracker** -- Dedicated page analyzing budget performance over 3/6/12 months with monthly breakdown, cumulative category savings, savings rate percentage, and motivational feedback
-- **AI Insights** -- Month-navigable OpenAI-powered spending analysis with pace projections, budget exceed warnings, previous month comparison, and personalized savings tips
-- **Shareable Reports** -- Monthly report cards with share via Web Share API, copy link, or CSV download
-- **CSV Export** -- Download all expense data as CSV
+- **Dashboard** -- Month-navigable overview with weekly/monthly toggle, total spend, budget remaining, daily spending bar chart, category pie chart, budget alerts, recent expenses, share via Web Share API, and CSV download -- all scoped to the selected period
+- **CSV Export** -- Download expenses as CSV filtered by the selected month and category
 - **INR Currency** -- Formatted in Indian Rupees throughout
 - **User Authentication** -- JWT-based auth with login/register, user-scoped data (each user sees only their own expenses/budgets)
 - **Forgot/Reset Password** -- Email-based password reset with secure tokens (1hr expiry), SMTP support (Gmail/AWS SES)
@@ -132,6 +128,45 @@ In development mode, edit files in `backend/` and `frontend/src/` -- changes ref
 
 ---
 
+## Automated Testing
+
+**127 total tests** across 3 Docker-backed suites. All suites generate JUnit XML reports in `./reports/` for CI integration.
+
+### Frontend Regression Suite (84 tests, 19 suites)
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
+docker compose -f docker-compose.test.yml down -v
+```
+
+Covers: Login (6), Register (7), Dashboard (8), Expenses (7), Budgets (6), Admin (3), ForgotPassword (2), ResetPassword (1), Sidebar (6), AddExpenseModal (10), UploadStatementModal (3), ProtectedRoute (3), AuthContext (3), App routing (8), plus utility tests for apiBase, dashboardPeriod, expenseExport, statementImport, authValidation.
+
+Report: `reports/frontend-report.xml`
+
+### Backend Regression Suite (9 tests)
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
+docker compose -f docker-compose.test.yml down -v
+```
+
+Covers: auth logic (email normalization, user record building, token expiry), expense logic (income exclusion, export query building, future date validation).
+
+Report: `reports/backend-regression-report.xml`
+
+### Backend Integration Suite (34 tests)
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
+docker compose -f docker-compose.test.yml down -v
+```
+
+Runs against a real MongoDB container using FastAPI's `TestClient`. Covers: auth (register, login, forgot/reset password, wrong password, invalid tokens), expenses (CRUD, filters, ownership, future date validation), bulk import (duplicates, future dates, income), budgets (CRUD, month scoping, user isolation), categories (CRUD, duplicates, default protection), statement upload (CSV, PDF, HTML, AI fallback, password-protected), payee mappings (user-scoped), dashboard (monthly, weekly, income exclusion), alerts and reports (income exclusion, category/date filters, CSV export), savings (budget vs spent breakdown, user scoping), insights (OpenAI mock, no-data handling, invalid month), admin (role-based access, stats, activity).
+
+Report: `reports/backend-report.xml`
+
+---
+
 ## Stopping the App
 
 ```bash
@@ -180,6 +215,7 @@ docker compose down -v
 spendrax/
 +-- docker-compose.yml          # Production orchestration
 +-- docker-compose.dev.yml      # Development orchestration
++-- docker-compose.test.yml     # Docker-backed frontend/backend regression + integration tests
 +-- .dockerignore
 |
 +-- backend/
@@ -191,8 +227,15 @@ spendrax/
 |   +-- database.py             # MongoDB client & db instance
 |   +-- models.py               # Pydantic request models
 |   +-- auth.py                 # JWT utilities, password hashing, get_current_user, get_admin_user
+|   +-- auth_logic.py           # Pure auth helpers (user record, token, email normalization)
+|   +-- expense_logic.py        # Pure expense helpers (income filter, export query, date validation)
 |   +-- email_utils.py          # SMTP email sending for password reset
 |   +-- requirements.txt        # Python dependencies
+|   +-- tests/                  # Unit tests (auth logic, expense logic regressions)
+|   |   +-- test_auth_logic.py
+|   |   +-- test_regressions.py
+|   +-- integration_tests/      # Docker-backed API integration tests (34 tests)
+|   |   +-- test_api_integration.py  # Auth, expenses, budgets, categories, reports, savings, insights, admin
 |   +-- parsers/                # Bank statement parsing module
 |   |   +-- __init__.py         # Module exports
 |   |   +-- csv_parser.py       # CSV statement parser
@@ -225,7 +268,17 @@ spendrax/
         +-- index.css           # Design system CSS variables
         +-- lib/
         |   +-- api.js          # API client + INR formatter
+        |   +-- apiBase.js      # API base URL with env fallback
+        |   +-- router.js       # Re-exports from react-router-dom
+        |   +-- authValidation.js    # Form validation helpers
+        |   +-- dashboardPeriod.js   # Week range calculation (backend-first)
+        |   +-- expenseExport.js     # Export param builder (month + category)
+        |   +-- statementImport.js   # Transaction filtering and import helpers
         |   +-- utils.js        # shadcn utility
+        +-- test/               # Test utilities and mocks
+        |   +-- testUtils.js    # renderComponent, flushPromises, click, submit helpers
+        |   +-- moduleMocks.js  # Centralized mocks for API, router, UI components
+        +-- setupTests.js       # Jest setup (window polyfills, cleanup, mock resets)
         +-- context/
         |   +-- AuthContext.js  # Auth state management (user, token, login/logout)
         +-- pages/
@@ -233,12 +286,9 @@ spendrax/
         |   +-- Register.js        # Registration page
         |   +-- ForgotPassword.js  # Forgot password page
         |   +-- ResetPassword.js   # Reset password page (with token)
-        |   +-- Dashboard.js       # Overview with charts & stats
-        |   +-- Expenses.js        # Expense CRUD + filtering
-        |   +-- Budgets.js         # Budget management per category
-        |   +-- Summary.js         # Weekly/monthly analysis
-        |   +-- Reports.js         # Shareable monthly report
-        |   +-- Insights.js        # AI-powered spending analysis
+        |   +-- Dashboard.js       # Overview with weekly/monthly charts, stats, share & CSV export
+        |   +-- Expenses.js        # Expense CRUD, month navigation, category filter, CSV export
+        |   +-- Budgets.js         # Budget management per category with savings tracking
         |   +-- Admin.js           # Admin dashboard (role-based access)
         +-- components/
             +-- Sidebar.js              # Navigation (desktop + mobile) + logout

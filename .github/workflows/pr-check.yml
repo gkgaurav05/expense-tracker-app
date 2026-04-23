@@ -2,65 +2,82 @@ name: PR Checks
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, test]
 
 jobs:
-  lint-and-test:
-    name: Lint & Test
+  terraform-checks:
+    name: Terraform Validate
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
 
-      - name: Install frontend dependencies
+      - name: Check Terraform formatting
         run: |
-          cd frontend
-          yarn install --frozen-lockfile
+          terraform fmt -check -recursive infrastructure/terraform/bootstrap infrastructure/terraform/envs infrastructure/terraform/modules
+          terraform fmt -check -recursive infrastructure/terraform/IAM
 
-      - name: Lint frontend
+      - name: Validate bootstrap Terraform root
         run: |
-          cd frontend
-          yarn lint || true  # Don't fail on lint warnings
+          terraform -chdir=infrastructure/terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=infrastructure/terraform/bootstrap validate
 
-      - name: Build frontend
+      - name: Validate environment Terraform roots
         run: |
-          cd frontend
-          yarn build
-        env:
-          CI: false  # Prevent treating warnings as errors
+          for env in test staging prod; do
+            terraform -chdir="infrastructure/terraform/envs/${env}" init -backend=false -input=false
+            terraform -chdir="infrastructure/terraform/envs/${env}" validate
+          done
 
-      - name: Run frontend tests
+      - name: Validate IAM Terraform root
         run: |
-          cd frontend
-          yarn test --watchAll=false --passWithNoTests
+          terraform -chdir=infrastructure/terraform/IAM init -backend=false -input=false
+          terraform -chdir=infrastructure/terraform/IAM validate
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+  frontend-checks:
+    name: Frontend Regressions
+    runs-on: ubuntu-latest
 
-      - name: Install backend dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio flake8
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Lint backend
-        run: |
-          cd backend
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+      - name: Run Docker-backed frontend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-regression-test frontend-regression-test
 
-      - name: Run backend tests
-        run: |
-          cd backend
-          python -m pytest --ignore=tests/ -q || true
+      - name: Tear down frontend regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  backend-regressions:
+    name: Backend Regressions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Docker-backed backend regression suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-regression-test backend-regression-test
+
+      - name: Tear down regression stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  backend-integration:
+    name: Backend Integration
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Docker-backed backend integration suite
+        run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-test backend-test
+
+      - name: Tear down integration stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
   docker-build:
     name: Docker Build Check
@@ -70,9 +87,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build backend image
-        run: |
-          docker build -t spendrax-backend:test ./backend
+        run: docker build -t spendrax-backend:test ./backend
 
       - name: Build frontend image
-        run: |
-          docker build -t spendrax-frontend:test ./frontend
+        run: docker build -t spendrax-frontend:test ./frontend

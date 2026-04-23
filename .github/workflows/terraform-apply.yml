@@ -1,0 +1,90 @@
+name: Terraform Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options:
+          - test
+          - staging
+          - prod
+      action:
+        description: Run plan only or apply the plan
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+
+env:
+  TF_INPUT: "false"
+  TF_IN_AUTOMATION: "true"
+  TF_WORKING_DIR: infrastructure/terraform/envs/${{ inputs.environment }}
+  TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
+  TF_VAR_key_pair_name: ${{ vars.TF_VAR_KEY_PAIR_NAME || 'spendrax-key' }}
+  TF_VAR_allowed_ssh_cidr: ${{ vars.TF_VAR_ALLOWED_SSH_CIDR || '0.0.0.0/0' }}
+  TF_VAR_instance_type: ${{ vars.TF_VAR_INSTANCE_TYPE || 't3.small' }}
+  TF_VAR_documentdb_password: ${{ secrets.TF_VAR_DOCUMENTDB_PASSWORD || secrets.DOCUMENTDB_PASSWORD }}
+  TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY || secrets.JWT_SECRET_KEY }}
+  TF_VAR_openai_api_key: ${{ secrets.TF_VAR_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }} (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.8
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive infrastructure/terraform/bootstrap infrastructure/terraform/envs infrastructure/terraform/modules
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -out=tfplan
+
+      - name: Plan summary
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform show -no-color tfplan > plan.txt
+          {
+            echo "## Terraform plan: ${{ inputs.environment }}"
+            echo ""
+            echo '```'
+            sed -n '1,220p' plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform apply
+        if: ${{ inputs.action == 'apply' }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan

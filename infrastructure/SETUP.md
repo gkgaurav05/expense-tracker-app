@@ -1,17 +1,19 @@
 # AWS Infrastructure Setup Guide
 
-This guide walks you through deploying Spendrax to AWS using the EC2 + Docker Compose approach.
+This guide walks you through deploying Spendrax to AWS using the EC2 + Docker Compose approach, with GitHub Actions applying infrastructure and then deploying the application automatically.
+
+For a more detailed beginner-friendly walkthrough, see [AUTOMATED_WORKFLOW_DEPLOYMENT_GUIDE.md](/Users/gaurav.kumar/workspace/expense-tracker-app/infrastructure/AUTOMATED_WORKFLOW_DEPLOYMENT_GUIDE.md).
 
 ## Prerequisites
 
 1. **AWS Account** with appropriate permissions
 2. **AWS CLI** installed and configured (`aws configure`)
-3. **Terraform** installed (v1.0+)
+3. **Terraform** installed (v1.7+)
 
 ## Architecture Overview
 
 ```
-Internet → ALB (Port 80/443) → EC2 (Port 80)
+Internet → ALB (Port 80) → EC2 (Port 80)
                                   └── Nginx (reverse proxy)
                                         ├── Frontend (Port 3000)
                                         └── Backend (Port 8001) → DocumentDB (Private Subnet)
@@ -40,7 +42,7 @@ chmod 600 ~/.ssh/spendrax-key.pem
 ### Step 2: Configure Terraform Variables
 
 ```bash
-cd infrastructure/terraform
+cd infrastructure/terraform/envs/prod
 
 # Copy example file
 cp terraform.tfvars.example terraform.tfvars
@@ -52,18 +54,85 @@ nano terraform.tfvars
 Required variables:
 ```hcl
 key_pair_name         = "spendrax-key"
-allowed_ssh_cidr      = "YOUR_IP/32"  # Find with: curl ifconfig.me
+allowed_ssh_cidr      = "YOUR_IP/32"  # For your own SSH access only; GitHub Actions deploys through SSM
 documentdb_username   = "spendrax_admin"
 documentdb_password   = "YourSecurePassword123!"  # Min 8 characters
 jwt_secret_key        = "generate-a-strong-random-string"
 openai_api_key        = "sk-..."  # Optional
 ```
 
-### Step 3: Deploy Infrastructure
+### Step 3: Prepare GitHub Actions Credentials
+
+Create or choose an IAM user for GitHub Actions and attach the deploy policy from [infrastructure/terraform/IAM/README.md](/Users/gaurav.kumar/workspace/expense-tracker-app/infrastructure/terraform/IAM/README.md).
+
+You can manage that policy with Terraform from `infrastructure/terraform/IAM`, or create the IAM user manually and attach the generated policy there.
+
+### Step 4: Add GitHub Repository Secrets And Variables
+
+Add these GitHub Actions secrets for the Terraform and deployment workflows:
+
+| Secret Name | Required | Description |
+|-------------|----------|-------------|
+| `AWS_ACCESS_KEY_ID` | Yes | Access key for the GitHub Actions deploy user |
+| `AWS_SECRET_ACCESS_KEY` | Yes | Secret key for the GitHub Actions deploy user |
+| `TF_VAR_DOCUMENTDB_PASSWORD` | Yes | Terraform value for `documentdb_password` |
+| `TF_VAR_JWT_SECRET_KEY` | Yes | Terraform value for `jwt_secret_key` |
+| `TF_VAR_OPENAI_API_KEY` | No | Terraform value for `openai_api_key` |
+
+Add these GitHub Actions repository variables:
+
+| Variable Name | Required | Description |
+|---------------|----------|-------------|
+| `AWS_REGION` | Yes | AWS region, for example `ap-south-1` |
+| `TF_VAR_PROJECT_NAME` | No | Terraform value for `project_name`, default `spendrax` |
+| `TF_VAR_KEY_PAIR_NAME` | No | Terraform value for `key_pair_name`, default `spendrax-key` |
+| `TF_VAR_ALLOWED_SSH_CIDR` | No | Terraform value for `allowed_ssh_cidr`, default `0.0.0.0/0` |
+| `TF_VAR_INSTANCE_TYPE` | No | Terraform value for `instance_type`, default `t3.small` |
+| `TERRAFORM_ENV` | No | App deployment environment root override, default `test` on the `test` branch and `prod` on `main` |
+
+### Step 5: Trigger The Deployment Workflow
+
+Use the `Terraform Apply` workflow first when infrastructure must be created or updated. Choose `test`, `staging`, or `prod`, review the plan, then run it with `action=apply`.
+
+After infrastructure exists, the deployment workflow does this automatically on `test` and `main`:
+
+1. runs regression and integration tests
+2. runs a smoke test against real backend and frontend containers
+3. checks whether the selected Terraform environment already has deployment outputs available
+4. initializes Terraform only to read deployment outputs from state
+5. uploads a release bundle to S3
+6. deploys the bundle to EC2 through AWS Systems Manager (SSM)
+7. verifies application health after deployment
+
+If infrastructure has not been created yet for that environment, the deployment job is skipped with a summary telling you to run `Terraform Apply` first.
+
+You can trigger it in either of these ways:
 
 ```bash
-# Initialize Terraform
-terraform init
+# Option 1: push to test or main
+git push origin test
+
+# Option 2: run from GitHub Actions -> "CI/CD Pipeline" -> "Run workflow"
+```
+
+The application deploy no longer depends on manually SSH-ing into EC2 or cloning the repo on the instance.
+
+### Step 6: Local Terraform Fallback (Optional)
+
+```bash
+cd infrastructure/terraform/envs/test
+
+# Bootstrap backend state storage
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+../../../scripts/bootstrap-tf-backend.sh "spendrax-terraform-state-${ACCOUNT_ID}" "spendrax-terraform-locks" "ap-south-1"
+
+# Initialize Terraform against the remote backend
+terraform init \
+  -backend-config="bucket=spendrax-terraform-state-${ACCOUNT_ID}" \
+  -backend-config="key=test/terraform.tfstate" \
+  -backend-config="region=ap-south-1" \
+  -backend-config="encrypt=true" \
+  -backend-config="dynamodb_table=spendrax-terraform-locks"
 
 # Preview changes
 terraform plan
@@ -71,39 +140,13 @@ terraform plan
 # Apply (creates resources)
 terraform apply
 
-# Note the outputs:
-# - alb_dns_name: ALB URL to access the app (use this!)
-# - public_ip: EC2 IP (for SSH via jump host)
-# - ssh_command: How to connect
+# Useful outputs:
+# - alb_dns_name: ALB URL to access the app
+# - deployment_artifacts_bucket: release bundle bucket
+# - instance_id: EC2 instance used by SSM deployment
 ```
 
-### Step 4: Clone Repository to EC2
-
-```bash
-# SSH into EC2
-ssh -i ~/.ssh/spendrax-key.pem ec2-user@<PUBLIC_IP>
-
-# Clone your repo
-cd /opt/spendrax
-sudo -u spendrax git clone https://github.com/YOUR_USERNAME/expense-tracker-app.git .
-
-# Copy environment file
-sudo cp /opt/spendrax/.env /opt/spendrax/backend/.env
-```
-
-### Step 5: Deploy Application
-
-```bash
-# On EC2:
-cd /opt/spendrax
-sudo -u spendrax docker compose -f docker-compose.prod.yml up --build -d
-
-# Check status
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f
-```
-
-### Step 6: Access Your App
+### Step 7: Access Your App
 
 Access via ALB DNS (from terraform output):
 ```
@@ -112,56 +155,51 @@ http://<ALB_DNS_NAME>
 
 Example: `http://spendrax-alb-123456789.ap-south-1.elb.amazonaws.com`
 
-### Step 7: Set Up SSL (Optional but Recommended)
+### Step 8: Domain And SSL
 
-```bash
-# On EC2:
-cd /opt/spendrax/infrastructure/scripts
-chmod +x setup-ssl.sh
-./setup-ssl.sh yourdomain.com your@email.com
+For the current setup, skip custom domain and SSL configuration.
+
+Use the ALB URL over HTTP:
+
+```text
+http://<ALB_DNS_NAME>
 ```
 
-## GitHub Actions Setup
-
-### Required Secrets
-
-Add these secrets to your GitHub repository (Settings → Secrets → Actions):
-
-| Secret Name | Required | Description |
-|-------------|----------|-------------|
-| `EC2_HOST` | Yes | EC2 private IP (if using jump host) or public IP |
-| `EC2_SSH_KEY` | Yes | Contents of your private key file |
-| `ALB_DNS_NAME` | Yes | ALB DNS name (from terraform output) |
-| `JUMP_HOST` | No | Jump/bastion host IP (if required by your org) |
-| `JUMP_HOST_USER` | No | Jump host username (default: ec2-user) |
-
-### Getting the Values
-
-```bash
-# SSH Key
-cat ~/.ssh/spendrax-key.pem
-# Copy entire output including BEGIN/END lines
-
-# ALB DNS Name (after terraform apply)
-cd infrastructure/terraform
-terraform output alb_dns_name
-```
-
+The old `setup-ssl.sh` script is left in the repo as a legacy helper for a future custom-domain setup, but it is not part of the active deployment path.
 
 ## Useful Commands
 
 ### Terraform
 
 ```bash
+# Use the matching environment root:
+cd infrastructure/terraform/envs/staging
+
+# Initialize with the environment backend
+terraform init -backend-config=backend.hcl
+
 # View current state
 terraform show
 
-# Destroy all resources (CAUTION!)
-terraform destroy
+# Destroy this environment (CAUTION!)
+terraform plan -destroy -out=destroy.tfplan
+terraform apply destroy.tfplan
 
 # Update infrastructure
 terraform apply
 ```
+
+### Workflow Helpers
+
+```bash
+# Bootstrap the Terraform backend bucket and lock table
+./infrastructure/scripts/bootstrap-tf-backend.sh <state-bucket> <lock-table> <aws-region>
+
+# Trigger an application deploy over SSM after uploading a release bundle
+./infrastructure/scripts/deploy.sh <instance-id> <artifact-bucket> <artifact-key> [release-id] [aws-region]
+```
+
+See `infrastructure/terraform/README.md` for the full environment/module layout and `infrastructure/DESTROY.md` for the recommended destroy workflow.
 
 ### EC2 / Docker
 
@@ -183,13 +221,11 @@ docker compose -f docker-compose.prod.yml up --build -d
 docker stats
 ```
 
-### Manual Deployment
+### Manual Deployment Through SSM
 
 ```bash
-# On EC2:
-cd /opt/spendrax
-git pull origin main
-docker compose -f docker-compose.prod.yml up --build -d
+# Upload a release bundle first, then trigger the host deploy script via SSM
+./infrastructure/scripts/deploy.sh <instance-id> <artifact-bucket> <artifact-key>
 ```
 
 ## Estimated Costs (ap-south-1 Mumbai)
@@ -210,7 +246,7 @@ docker compose -f docker-compose.prod.yml up --build -d
 ### Application not accessible
 
 ```bash
-# Check security group allows ports 80, 443
+# Check security group allows port 80
 # Check Nginx is running
 sudo systemctl status nginx
 
@@ -242,7 +278,7 @@ df -h
 
 - [ ] Restrict SSH to your IP only (`allowed_ssh_cidr`)
 - [ ] Use strong JWT secret (32+ random characters)
-- [ ] Set up SSL certificate
+- [ ] Optional later: set up custom domain + SSL
 - [ ] Restrict MongoDB Atlas IP whitelist
 - [ ] Enable AWS CloudTrail for auditing
 - [ ] Set up AWS billing alerts

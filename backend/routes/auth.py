@@ -1,13 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import datetime, timezone, timedelta
-import uuid
 import secrets
 
 from database import db
 from models import UserRegister, ForgotPassword, ResetPassword
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from email_utils import send_reset_email
+from auth_logic import (
+    build_auth_response,
+    build_forgot_password_response,
+    build_reset_token_record,
+    build_user_record,
+    is_reset_token_expired,
+    normalize_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -15,40 +21,25 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register")
 async def register(data: UserRegister):
     # Check if email already exists
-    existing = await db.users.find_one({"email": data.email.lower()})
+    normalized_email = normalize_email(data.email)
+    existing = await db.users.find_one({"email": normalized_email})
     if existing:
         raise HTTPException(400, "Email already registered")
 
     # Create user
-    user = {
-        "id": str(uuid.uuid4()),
-        "email": data.email.lower(),
-        "name": data.name,
-        "password": hash_password(data.password),
-        "role": "user",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
+    user = build_user_record(data.name, normalized_email, hash_password(data.password))
     await db.users.insert_one(user)
 
     # Generate token
     token = create_access_token({"sub": user["id"]})
 
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": user["id"],
-            "email": user["email"],
-            "name": user["name"],
-            "role": user.get("role", "user"),
-        }
-    }
+    return build_auth_response(user, token)
 
 
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     # Find user by email
-    user = await db.users.find_one({"email": form_data.username.lower()})
+    user = await db.users.find_one({"email": normalize_email(form_data.username)})
     if not user:
         raise HTTPException(401, "Invalid email or password")
 
@@ -59,16 +50,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     # Generate token
     token = create_access_token({"sub": user["id"]})
 
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": user["id"],
-            "email": user["email"],
-            "name": user["name"],
-            "role": user.get("role", "user"),
-        }
-    }
+    return build_auth_response(user, token)
 
 
 @router.get("/me")
@@ -79,34 +61,27 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 @router.post("/forgot-password")
 async def forgot_password(data: ForgotPassword):
     """Send password reset email."""
-    user = await db.users.find_one({"email": data.email.lower()})
+    user = await db.users.find_one({"email": normalize_email(data.email)})
 
     # Always return success to prevent email enumeration
     if not user:
-        return {"message": "If an account exists with this email, you will receive a reset link."}
+        return build_forgot_password_response()
 
     # Generate reset token
     reset_token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    reset_record = build_reset_token_record(user["id"], reset_token)
 
     # Store reset token
     await db.password_resets.update_one(
         {"user_id": user["id"]},
-        {
-            "$set": {
-                "user_id": user["id"],
-                "token": reset_token,
-                "expires_at": expires_at.isoformat(),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        },
+        {"$set": reset_record},
         upsert=True
     )
 
     # Send email
     await send_reset_email(user["email"], reset_token, user.get("name", "User"))
 
-    return {"message": "If an account exists with this email, you will receive a reset link."}
+    return build_forgot_password_response()
 
 
 @router.post("/reset-password")
@@ -119,8 +94,7 @@ async def reset_password(data: ResetPassword):
         raise HTTPException(400, "Invalid or expired reset token")
 
     # Check expiry
-    expires_at = datetime.fromisoformat(reset_record["expires_at"])
-    if datetime.now(timezone.utc) > expires_at:
+    if is_reset_token_expired(reset_record["expires_at"]):
         await db.password_resets.delete_one({"token": data.token})
         raise HTTPException(400, "Reset token has expired")
 

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, Mail, Lock, LogIn } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { getLoginValidationError } from '@/lib/authValidation';
+import { Link, useNavigate } from '@/lib/router';
 import { toast } from 'sonner';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
@@ -16,8 +17,9 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast.error('Please fill in all fields');
+    const validationError = getLoginValidationError(email, password);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
     setLoading(true);

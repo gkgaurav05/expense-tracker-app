@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from database import db
 from auth import get_current_user
+from expense_logic import build_category_totals
 
 router = APIRouter()
 
@@ -38,9 +39,7 @@ async def get_budget_alerts(month: Optional[str] = None, current_user: dict = De
         expense_query = {**base_query, "date": {"$gte": month_start, "$lte": month_end}}
     expenses = await db.expenses.find(expense_query, {"_id": 0}).to_list(10000)
 
-    category_totals = {}
-    for e in expenses:
-        category_totals[e["category"]] = category_totals.get(e["category"], 0) + e["amount"]
+    category_totals = build_category_totals(expenses)
 
     budgets = await db.budgets.find({"user_id": user_id, "month": target_month}, {"_id": 0}).to_list(100)
     categories = await db.categories.find(

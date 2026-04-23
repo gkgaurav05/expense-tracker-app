@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, Lock, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { getResetPasswordValidationError } from '@/lib/authValidation';
+import { Link, useSearchParams, useNavigate } from '@/lib/router';
 import { toast } from 'sonner';
 
 const spring = { type: 'spring', bounce: 0.3, duration: 0.6 };
@@ -21,18 +22,9 @@ export default function ResetPassword() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!password || !confirmPassword) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
+    const validationError = getResetPasswordValidationError(password, confirmPassword);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 

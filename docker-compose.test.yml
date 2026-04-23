@@ -1,0 +1,119 @@
+services:
+  frontend-regression-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      CI: "true"
+      JEST_JUNIT_OUTPUT_DIR: /app/reports
+      JEST_JUNIT_OUTPUT_NAME: frontend-report.xml
+    volumes:
+      - ./reports:/app/reports
+    command: yarn test:ci --reporters=default --reporters=jest-junit
+
+  backend-regression-test:
+    build: ./backend
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MONGO_URL: mongodb://mongo-test:27017
+      DB_NAME: spendrax_integration_test
+      CORS_ORIGINS: "*"
+      OPENAI_API_KEY: test-openai-key
+      JWT_SECRET_KEY: integration-test-secret
+      ADMIN_EMAILS: admin@example.com
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_USER: integration-test
+      SMTP_PASSWORD: integration-test
+      FROM_EMAIL: noreply@example.com
+      APP_URL: http://localhost:3000
+      PYTHONPATH: /app
+    volumes:
+      - ./reports:/app/reports
+    command: pytest -q tests/ --junitxml=reports/backend-regression-report.xml
+
+  mongo-test:
+    image: mongo:7
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend-test:
+    build: ./backend
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MONGO_URL: mongodb://mongo-test:27017
+      DB_NAME: spendrax_integration_test
+      CORS_ORIGINS: "*"
+      OPENAI_API_KEY: test-openai-key
+      JWT_SECRET_KEY: integration-test-secret
+      ADMIN_EMAILS: admin@example.com
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_USER: integration-test
+      SMTP_PASSWORD: integration-test
+      FROM_EMAIL: noreply@example.com
+      APP_URL: http://localhost:3000
+    volumes:
+      - ./reports:/app/reports
+    depends_on:
+      mongo-test:
+        condition: service_healthy
+    command: pytest -q integration_tests/test_api_integration.py --junitxml=reports/backend-report.xml
+
+  backend:
+    build: ./backend
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MONGO_URL: mongodb://mongo-test:27017
+      DB_NAME: spendrax_smoke_test
+      CORS_ORIGINS: "*"
+      OPENAI_API_KEY: test-openai-key
+      JWT_SECRET_KEY: smoke-test-secret
+      ADMIN_EMAILS: admin@example.com
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_USER: smoke-test
+      SMTP_PASSWORD: smoke-test
+      FROM_EMAIL: noreply@example.com
+      APP_URL: http://frontend
+    depends_on:
+      mongo-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  smoke-test:
+    build: ./backend
+    environment:
+      PYTHONUNBUFFERED: "1"
+      FRONTEND_BASE_URL: http://frontend
+      BACKEND_BASE_URL: http://backend:8001
+    volumes:
+      - ./reports:/app/reports
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    command: pytest -q smoke_tests/test_smoke_runtime.py --junitxml=reports/smoke-report.xml

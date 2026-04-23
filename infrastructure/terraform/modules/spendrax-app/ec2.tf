@@ -1,4 +1,3 @@
-# Get latest Amazon Linux 2023 AMI
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -14,9 +13,8 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# IAM Role for EC2
 resource "aws_iam_role" "ec2_role" {
-  name = "${var.project_name}-ec2-role"
+  name = "${local.name_prefix}-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -30,11 +28,14 @@ resource "aws_iam_role" "ec2_role" {
       }
     ]
   })
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-ec2-role"
+  })
 }
 
-# IAM Policy for EC2 (SSM, CloudWatch, ECR access)
 resource "aws_iam_role_policy" "ec2_policy" {
-  name = "${var.project_name}-ec2-policy"
+  name = "${local.name_prefix}-ec2-policy"
   role = aws_iam_role.ec2_role.id
 
   policy = jsonencode({
@@ -47,7 +48,7 @@ resource "aws_iam_role_policy" "ec2_policy" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath"
         ]
-        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/*"
+        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${local.name_prefix}/*"
       },
       {
         Effect = "Allow"
@@ -57,6 +58,17 @@ resource "aws_iam_role_policy" "ec2_policy" {
           "logs:PutLogEvents"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.deployment_artifacts.arn,
+          "${aws_s3_bucket.deployment_artifacts.arn}/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -72,13 +84,20 @@ resource "aws_iam_role_policy" "ec2_policy" {
   })
 }
 
-# IAM Instance Profile
-resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "${var.project_name}-ec2-profile"
-  role = aws_iam_role.ec2_role.name
+resource "aws_iam_role_policy_attachment" "ec2_ssm_managed_core" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# EC2 Instance
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${local.name_prefix}-ec2-profile"
+  role = aws_iam_role.ec2_role.name
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-ec2-profile"
+  })
+}
+
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
@@ -94,19 +113,23 @@ resource "aws_instance" "app" {
     delete_on_termination = true
   }
 
-  user_data = base64encode(templatefile("${path.module}/user-data.sh", {
-    project_name   = var.project_name
-    mongo_url      = "mongodb://${var.documentdb_username}:${var.documentdb_password}@${aws_docdb_cluster.main.endpoint}:27017/${var.project_name}_db?tls=false&retryWrites=false&directConnection=true"
-    jwt_secret_key = var.jwt_secret_key
-    openai_api_key = var.openai_api_key
-    domain_name    = var.domain_name
-  }))
-
-  tags = {
-    Name = "${var.project_name}-app-server"
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
   }
 
-  # Ensure DocumentDB is created before EC2
+  user_data = base64encode(templatefile("${path.module}/user-data.sh", {
+    project_name   = var.project_name
+    mongo_url      = "mongodb://${var.documentdb_username}:${var.documentdb_password}@${aws_docdb_cluster.main.endpoint}:27017/${local.database_name}?tls=false&retryWrites=false&directConnection=true"
+    database_name  = local.database_name
+    jwt_secret_key = var.jwt_secret_key
+    openai_api_key = var.openai_api_key
+  }))
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-app-server"
+  })
+
   depends_on = [aws_docdb_cluster_instance.main]
 
   lifecycle {
@@ -114,8 +137,11 @@ resource "aws_instance" "app" {
   }
 }
 
-# CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "app" {
-  name              = "/aws/ec2/${var.project_name}"
+  name              = "/aws/ec2/${local.name_prefix}"
   retention_in_days = 14
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-logs"
+  })
 }

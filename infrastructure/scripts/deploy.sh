@@ -1,63 +1,66 @@
 #!/bin/bash
-# Deployment script for Spendrax on EC2
-# Usage: ./deploy.sh [environment]
+# Trigger an application deployment on the EC2 instance through AWS SSM.
+# Usage: ./deploy.sh <instance-id> <artifact-bucket> <artifact-key> [release-id] [aws-region]
 
-set -e
+set -euo pipefail
 
-ENVIRONMENT=${1:-prod}
-APP_DIR="/opt/spendrax"
-COMPOSE_FILE="docker-compose.prod.yml"
+INSTANCE_ID="${1:?instance id is required}"
+ARTIFACT_BUCKET="${2:?artifact bucket is required}"
+ARTIFACT_KEY="${3:?artifact key is required}"
+RELEASE_ID="${4:-$(date +%Y%m%d%H%M%S)}"
+AWS_REGION="${5:-${AWS_REGION:-ap-south-1}}"
 
 echo "=========================================="
-echo "Deploying Spendrax - Environment: $ENVIRONMENT"
+echo "Deploying Spendrax via AWS SSM"
+echo "Instance: ${INSTANCE_ID}"
+echo "Artifact: s3://${ARTIFACT_BUCKET}/${ARTIFACT_KEY}"
+echo "Release: ${RELEASE_ID}"
+echo "Region: ${AWS_REGION}"
 echo "=========================================="
 
-cd $APP_DIR
+PARAMETERS=$(printf '{"commands":["/usr/local/bin/spendrax-deploy %s %s %s"]}' "${ARTIFACT_BUCKET}" "${ARTIFACT_KEY}" "${RELEASE_ID}")
 
-# Pull latest code
-echo "[1/5] Pulling latest code from Git..."
-git fetch origin
-git reset --hard origin/main
+COMMAND_ID="$(aws ssm send-command \
+  --region "${AWS_REGION}" \
+  --instance-ids "${INSTANCE_ID}" \
+  --document-name "AWS-RunShellScript" \
+  --comment "Deploy Spendrax release ${RELEASE_ID}" \
+  --parameters "${PARAMETERS}" \
+  --query 'Command.CommandId' \
+  --output text)"
 
-# Copy environment file if exists
-if [ -f ".env.prod" ]; then
-    cp .env.prod backend/.env
+echo "SSM command submitted: ${COMMAND_ID}"
+aws ssm wait command-executed --region "${AWS_REGION}" --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}" || true
+
+STATUS="$(aws ssm get-command-invocation \
+  --region "${AWS_REGION}" \
+  --command-id "${COMMAND_ID}" \
+  --instance-id "${INSTANCE_ID}" \
+  --query 'Status' \
+  --output text)"
+
+STDOUT_CONTENT="$(aws ssm get-command-invocation \
+  --region "${AWS_REGION}" \
+  --command-id "${COMMAND_ID}" \
+  --instance-id "${INSTANCE_ID}" \
+  --query 'StandardOutputContent' \
+  --output text)"
+
+STDERR_CONTENT="$(aws ssm get-command-invocation \
+  --region "${AWS_REGION}" \
+  --command-id "${COMMAND_ID}" \
+  --instance-id "${INSTANCE_ID}" \
+  --query 'StandardErrorContent' \
+  --output text)"
+
+echo "${STDOUT_CONTENT}"
+
+if [ "${STATUS}" != "Success" ]; then
+  echo "Deployment failed with status ${STATUS}"
+  if [ -n "${STDERR_CONTENT}" ] && [ "${STDERR_CONTENT}" != "None" ]; then
+    echo "${STDERR_CONTENT}"
+  fi
+  exit 1
 fi
 
-# Build and deploy
-echo "[2/5] Building Docker images..."
-docker compose -f $COMPOSE_FILE build --no-cache
-
-echo "[3/5] Stopping existing containers..."
-docker compose -f $COMPOSE_FILE down || true
-
-echo "[4/5] Starting new containers..."
-docker compose -f $COMPOSE_FILE up -d
-
-# Wait for health check
-echo "[5/5] Waiting for services to be healthy..."
-sleep 10
-
-# Check if services are running
-if docker compose -f $COMPOSE_FILE ps | grep -q "Up"; then
-    echo ""
-    echo "=========================================="
-    echo "Deployment successful!"
-    echo "=========================================="
-    docker compose -f $COMPOSE_FILE ps
-    echo ""
-    echo "Backend health check:"
-    curl -s http://localhost:8001/api/health || echo "Backend not responding yet..."
-else
-    echo "Deployment failed! Checking logs..."
-    docker compose -f $COMPOSE_FILE logs --tail=50
-    exit 1
-fi
-
-# Cleanup old images
-echo ""
-echo "Cleaning up old Docker images..."
-docker image prune -f
-
-echo ""
 echo "Deployment complete at $(date)"
