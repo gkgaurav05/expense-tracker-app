@@ -12,6 +12,15 @@ on:
         required: false
         default: "false"
         type: boolean
+      target_environment:
+        description: Environment to deploy when running manually
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - staging
+          - prod
       deploy_application:
         description: Deploy the application bundle to EC2
         required: false
@@ -25,8 +34,8 @@ concurrency:
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  TERRAFORM_ENV: ${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
-  TF_WORKING_DIR: infrastructure/terraform/envs/${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
+  TERRAFORM_ENV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
+  TF_WORKING_DIR: infrastructure/terraform/envs/${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
   TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
 
 jobs:
@@ -374,10 +383,15 @@ jobs:
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test]
     if: |
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
       (
-        needs.detect-changes.outputs.app_changed == 'true' ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
+        (
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.deploy_application == 'true'
+        ) ||
+        (
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
+          needs.detect-changes.outputs.app_changed == 'true'
+        )
       ) &&
       (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
       (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
@@ -466,10 +480,15 @@ jobs:
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test, check-infrastructure]
     if: |
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
       (
-        needs.detect-changes.outputs.app_changed == 'true' ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
+        (
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.deploy_application == 'true'
+        ) ||
+        (
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
+          needs.detect-changes.outputs.app_changed == 'true'
+        )
       ) &&
       (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
       (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
@@ -478,7 +497,7 @@ jobs:
       (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') &&
       needs.check-infrastructure.outputs.available == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'test' && 'test' || 'production' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target_environment == 'prod' && 'production' || github.event.inputs.target_environment) || (github.ref_name == 'test' && 'test' || 'production') }}
 
     steps:
       - uses: actions/checkout@v6

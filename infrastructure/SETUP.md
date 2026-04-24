@@ -118,6 +118,8 @@ You can trigger it in either of these ways:
 git push origin test
 
 # Option 2: run from GitHub Actions -> "CI/CD Pipeline" -> "Run workflow"
+# Choose target_environment and keep deploy_application=true to redeploy the app
+# even when there are no new application file changes in the branch.
 ```
 
 The application deploy no longer depends on manually SSH-ing into EC2 or cloning the repo on the instance.
