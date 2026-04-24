@@ -6,9 +6,12 @@ LOCK_TABLE="${2:?lock table name is required}"
 AWS_REGION="${3:?aws region is required}"
 
 echo "Ensuring Terraform backend bucket exists: ${STATE_BUCKET}"
+BUCKET_CREATED=false
 if aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
   echo "Terraform state bucket already exists"
 else
+  BUCKET_CREATED=true
+
   if [ "${AWS_REGION}" = "us-east-1" ]; then
     aws s3api create-bucket \
       --bucket "${STATE_BUCKET}" \
@@ -21,17 +24,21 @@ else
   fi
 fi
 
-aws s3api put-bucket-versioning \
-  --bucket "${STATE_BUCKET}" \
-  --versioning-configuration Status=Enabled
+if [ "${BUCKET_CREATED}" = "true" ]; then
+  aws s3api put-bucket-versioning \
+    --bucket "${STATE_BUCKET}" \
+    --versioning-configuration Status=Enabled
 
-aws s3api put-bucket-encryption \
-  --bucket "${STATE_BUCKET}" \
-  --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+  aws s3api put-bucket-encryption \
+    --bucket "${STATE_BUCKET}" \
+    --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 
-aws s3api put-public-access-block \
-  --bucket "${STATE_BUCKET}" \
-  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  aws s3api put-public-access-block \
+    --bucket "${STATE_BUCKET}" \
+    --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+else
+  echo "Skipping bucket configuration updates for existing backend bucket"
+fi
 
 echo "Ensuring Terraform lock table exists: ${LOCK_TABLE}"
 if aws dynamodb describe-table --table-name "${LOCK_TABLE}" --region "${AWS_REGION}" >/dev/null 2>&1; then

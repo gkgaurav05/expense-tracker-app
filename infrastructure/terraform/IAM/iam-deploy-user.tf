@@ -53,7 +53,7 @@ data "aws_iam_policy_document" "github_actions_deployer" {
       "s3:GetLifecycleConfiguration",
       "s3:ListBucket",
       "s3:ListBucketVersions",
-      "s3:PutBucketEncryption",
+      "s3:PutEncryptionConfiguration",
       "s3:PutBucketPublicAccessBlock",
       "s3:PutBucketVersioning",
       "s3:PutLifecycleConfiguration",
