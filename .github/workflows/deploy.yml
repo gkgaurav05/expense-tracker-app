@@ -593,7 +593,7 @@ jobs:
           ROOT_URL="${APP_URL}"
           API_HEALTH_URL="${APP_URL}/api/health"
 
-          for attempt in $(seq 1 10); do
+          for attempt in $(seq 1 30); do
             ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${ROOT_URL}" || true)
             HEALTH_BODY=$(curl -fsS "${API_HEALTH_URL}" || true)
 
@@ -602,7 +602,10 @@ jobs:
               exit 0
             fi
 
-            echo "Health check attempt ${attempt}/10 did not pass yet"
+            echo "Health check attempt ${attempt}/30 did not pass yet (root=${ROOT_STATUS:-unknown})"
+            if [ -n "${HEALTH_BODY}" ]; then
+              echo "Health response: ${HEALTH_BODY}"
+            fi
             sleep 10
           done
 
