@@ -44,7 +44,15 @@ done
 ${DEPLOY_COMMAND}
 EOF
 
-PARAMETERS=$(printf '{"commands":["bash -lc %q"]}' "${REMOTE_SCRIPT}")
+REMOTE_SCRIPT_B64="$(printf '%s' "${REMOTE_SCRIPT}" | base64 | tr -d '\n')"
+BOOTSTRAP_COMMAND="echo '${REMOTE_SCRIPT_B64}' | base64 -d > /tmp/spendrax-ssm-deploy.sh"
+EXEC_COMMAND="bash /tmp/spendrax-ssm-deploy.sh"
+CLEANUP_COMMAND="rm -f /tmp/spendrax-ssm-deploy.sh"
+
+PARAMETERS=$(printf '{"commands":["%s","%s","%s"]}' \
+  "${BOOTSTRAP_COMMAND}" \
+  "${EXEC_COMMAND}" \
+  "${CLEANUP_COMMAND}")
 
 COMMAND_ID="$(aws ssm send-command \
   --region "${AWS_REGION}" \
