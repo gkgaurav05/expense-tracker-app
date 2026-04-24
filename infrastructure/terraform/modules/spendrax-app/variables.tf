@@ -71,6 +71,12 @@ variable "instance_type" {
   default     = "t3.small"
 }
 
+variable "root_volume_size" {
+  description = "Root EBS volume size for the EC2 instance in GiB."
+  type        = number
+  default     = 30
+}
+
 variable "key_pair_name" {
   description = "Name of the SSH key pair for EC2 access."
   type        = string
