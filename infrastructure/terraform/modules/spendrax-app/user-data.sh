@@ -162,5 +162,7 @@ echo "Deployment complete for release $RELEASE_ID"
 docker compose -f docker-compose.prod.yml ps
 DEPLOYSCRIPT
 chmod +x /usr/local/bin/spendrax-deploy
+mkdir -p /var/lib/spendrax
+touch /var/lib/spendrax/bootstrap-complete
 
 echo "User-data script completed at $(date)"

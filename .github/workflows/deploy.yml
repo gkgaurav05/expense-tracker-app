@@ -382,6 +382,7 @@ jobs:
     name: Check Infrastructure
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test]
     if: |
+      always() &&
       github.event_name != 'pull_request' &&
       (
         (
@@ -479,6 +480,7 @@ jobs:
     name: Deploy Application
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test, check-infrastructure]
     if: |
+      always() &&
       github.event_name != 'pull_request' &&
       (
         (

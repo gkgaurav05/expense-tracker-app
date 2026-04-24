@@ -18,7 +18,33 @@ echo "Release: ${RELEASE_ID}"
 echo "Region: ${AWS_REGION}"
 echo "=========================================="
 
-PARAMETERS=$(printf '{"commands":["/usr/local/bin/spendrax-deploy %s %s %s"]}' "${ARTIFACT_BUCKET}" "${ARTIFACT_KEY}" "${RELEASE_ID}")
+printf -v DEPLOY_COMMAND '%q ' "/usr/local/bin/spendrax-deploy" "${ARTIFACT_BUCKET}" "${ARTIFACT_KEY}" "${RELEASE_ID}"
+DEPLOY_COMMAND="${DEPLOY_COMMAND% }"
+
+read -r -d '' REMOTE_SCRIPT <<EOF || true
+timeout_seconds=900
+wait_interval=10
+elapsed=0
+
+while [ ! -x /usr/local/bin/spendrax-deploy ]; do
+  if [ "\${elapsed}" -ge "\${timeout_seconds}" ]; then
+    echo "Timed out waiting for /usr/local/bin/spendrax-deploy to become available"
+    if [ -f /var/log/user-data.log ]; then
+      echo "===== /var/log/user-data.log (tail) ====="
+      tail -n 200 /var/log/user-data.log
+    fi
+    exit 1
+  fi
+
+  echo "Waiting for EC2 bootstrap to finish (elapsed \${elapsed}s)"
+  sleep "\${wait_interval}"
+  elapsed=\$((elapsed + wait_interval))
+done
+
+${DEPLOY_COMMAND}
+EOF
+
+PARAMETERS=$(printf '{"commands":["bash -lc %q"]}' "${REMOTE_SCRIPT}")
 
 COMMAND_ID="$(aws ssm send-command \
   --region "${AWS_REGION}" \
