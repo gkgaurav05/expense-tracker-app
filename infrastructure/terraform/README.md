@@ -79,6 +79,8 @@ Two manual workflows are included:
 - `Terraform Apply`: plan or apply `test`, `staging`, or `prod`
 - `Terraform Destroy`: destroy `test`, `staging`, or `prod` with typed confirmation
 
+In GitHub Actions, the workflow now derives the Terraform backend bucket name from the active AWS account instead of relying on the committed `backend.hcl` bucket value. The apply workflow also ensures the S3 state bucket and DynamoDB lock table exist before running `terraform init`.
+
 Required repository or environment secrets:
 
 - `AWS_ACCESS_KEY_ID`

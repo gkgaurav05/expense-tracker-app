@@ -9,10 +9,16 @@ echo "Ensuring Terraform backend bucket exists: ${STATE_BUCKET}"
 if aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
   echo "Terraform state bucket already exists"
 else
-  aws s3api create-bucket \
-    --bucket "${STATE_BUCKET}" \
-    --region "${AWS_REGION}" \
-    --create-bucket-configuration "LocationConstraint=${AWS_REGION}"
+  if [ "${AWS_REGION}" = "us-east-1" ]; then
+    aws s3api create-bucket \
+      --bucket "${STATE_BUCKET}" \
+      --region "${AWS_REGION}"
+  else
+    aws s3api create-bucket \
+      --bucket "${STATE_BUCKET}" \
+      --region "${AWS_REGION}" \
+      --create-bucket-configuration "LocationConstraint=${AWS_REGION}"
+  fi
 fi
 
 aws s3api put-bucket-versioning \

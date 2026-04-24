@@ -24,8 +24,10 @@ concurrency:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TERRAFORM_ENV: ${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
   TF_WORKING_DIR: infrastructure/terraform/envs/${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
+  TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
 
 jobs:
   detect-changes:
@@ -316,26 +318,7 @@ jobs:
       (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped')
 
     steps:
-      - name: Checkout repository
-        id: checkout_primary
-        uses: actions/checkout@v6
-        continue-on-error: true
-
-      - name: Wait before checkout retry
-        if: steps.checkout_primary.outcome == 'failure'
-        run: sleep 15
-
-      - name: Retry repository checkout
-        id: checkout_retry
-        if: steps.checkout_primary.outcome == 'failure'
-        uses: actions/checkout@v6
-        continue-on-error: true
-
-      - name: Stop when repository checkout fails
-        if: steps.checkout_primary.outcome != 'success' && steps.checkout_retry.outcome != 'success'
-        run: |
-          echo "GitHub checkout failed before smoke tests could start." >&2
-          exit 1
+      - uses: actions/checkout@v6
 
       - name: Create reports directory
         run: mkdir -p reports
@@ -354,10 +337,7 @@ jobs:
       - name: Generate summary
         if: always()
         run: |
-          if [ "${{ steps.checkout_primary.outcome }}" != "success" ] && [ "${{ steps.checkout_retry.outcome }}" != "success" ]; then
-            echo "## Smoke Tests" >> $GITHUB_STEP_SUMMARY
-            echo "Repository checkout failed before smoke tests could start. GitHub returned an error while fetching the workflow ref." >> $GITHUB_STEP_SUMMARY
-          elif [ -f reports/smoke-report.xml ]; then
+          if [ -f reports/smoke-report.xml ]; then
             TESTS=$(grep -oP 'tests="\K[0-9]+' reports/smoke-report.xml | head -1)
             FAILURES=$(grep -oP 'failures="\K[0-9]+' reports/smoke-report.xml | head -1)
             ERRORS=$(grep -oP 'errors="\K[0-9]+' reports/smoke-report.xml | head -1)
@@ -412,7 +392,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -421,6 +401,23 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Prepare Terraform backend config
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
+          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
+          BACKEND_CONFIG_PATH="${RUNNER_TEMP}/terraform-backend-${TERRAFORM_ENV}.hcl"
+
+          cat > "${BACKEND_CONFIG_PATH}" <<EOF
+          bucket         = "${STATE_BUCKET}"
+          key            = "${TERRAFORM_ENV}/terraform.tfstate"
+          region         = "${AWS_REGION}"
+          encrypt        = true
+          dynamodb_table = "${LOCK_TABLE}"
+          EOF
+
+          echo "TF_BACKEND_CONFIG_PATH=${BACKEND_CONFIG_PATH}" >> "$GITHUB_ENV"
+
       - name: Check Terraform backend and outputs
         id: check
         run: |
@@ -428,7 +425,7 @@ jobs:
           terraform -chdir="${TF_WORKING_DIR}" init \
             -input=false \
             -reconfigure \
-            -backend-config=backend.hcl >/tmp/terraform-init.log 2>&1
+            -backend-config="${TF_BACKEND_CONFIG_PATH}" >/tmp/terraform-init.log 2>&1
           INIT_STATUS=$?
           set -e
 
@@ -487,7 +484,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -496,12 +493,29 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Prepare Terraform backend config
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
+          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
+          BACKEND_CONFIG_PATH="${RUNNER_TEMP}/terraform-backend-${TERRAFORM_ENV}.hcl"
+
+          cat > "${BACKEND_CONFIG_PATH}" <<EOF
+          bucket         = "${STATE_BUCKET}"
+          key            = "${TERRAFORM_ENV}/terraform.tfstate"
+          region         = "${AWS_REGION}"
+          encrypt        = true
+          dynamodb_table = "${LOCK_TABLE}"
+          EOF
+
+          echo "TF_BACKEND_CONFIG_PATH=${BACKEND_CONFIG_PATH}" >> "$GITHUB_ENV"
+
       - name: Terraform init
         run: |
           terraform -chdir="${TF_WORKING_DIR}" init \
             -input=false \
             -reconfigure \
-            -backend-config=backend.hcl
+            -backend-config="${TF_BACKEND_CONFIG_PATH}"
 
       - name: Read deployment outputs
         run: |

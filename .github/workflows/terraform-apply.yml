@@ -24,6 +24,8 @@ permissions:
   contents: read
 
 env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TF_INPUT: "false"
   TF_IN_AUTOMATION: "true"
   TF_WORKING_DIR: infrastructure/terraform/envs/${{ inputs.environment }}
@@ -51,18 +53,37 @@ jobs:
           terraform_version: 1.14.8
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform format check
         run: terraform fmt -check -recursive infrastructure/terraform/bootstrap infrastructure/terraform/envs infrastructure/terraform/modules
 
+      - name: Prepare Terraform backend
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="${TF_VAR_project_name}-terraform-state-${ACCOUNT_ID}"
+          LOCK_TABLE="${TF_VAR_project_name}-terraform-locks"
+          BACKEND_CONFIG_PATH="${RUNNER_TEMP}/terraform-backend-${{ inputs.environment }}.hcl"
+
+          bash infrastructure/scripts/bootstrap-tf-backend.sh "${STATE_BUCKET}" "${LOCK_TABLE}" "${AWS_REGION}"
+
+          cat > "${BACKEND_CONFIG_PATH}" <<EOF
+          bucket         = "${STATE_BUCKET}"
+          key            = "${{ inputs.environment }}/terraform.tfstate"
+          region         = "${AWS_REGION}"
+          encrypt        = true
+          dynamodb_table = "${LOCK_TABLE}"
+          EOF
+
+          echo "TF_BACKEND_CONFIG_PATH=${BACKEND_CONFIG_PATH}" >> "$GITHUB_ENV"
+
       - name: Terraform init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -backend-config=backend.hcl
+        run: terraform init -backend-config="${TF_BACKEND_CONFIG_PATH}"
 
       - name: Terraform validate
         working-directory: ${{ env.TF_WORKING_DIR }}

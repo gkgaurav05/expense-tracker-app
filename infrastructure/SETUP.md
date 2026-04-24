@@ -94,6 +94,8 @@ Add these GitHub Actions repository variables:
 
 Use the `Terraform Apply` workflow first when infrastructure must be created or updated. Choose `test`, `staging`, or `prod`, review the plan, then run it with `action=apply`.
 
+In GitHub Actions, the Terraform workflow automatically derives the backend bucket name from the current AWS account and ensures the backend bucket and lock table exist before it initializes the selected environment. The committed `backend.hcl` files are still used for local Terraform runs.
+
 After infrastructure exists, the deployment workflow does this automatically on `test` and `main`:
 
 1. runs regression and integration tests
