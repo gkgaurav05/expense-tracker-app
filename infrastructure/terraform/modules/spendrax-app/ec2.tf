@@ -98,6 +98,11 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   })
 }
 
+resource "terraform_data" "bootstrap_fingerprint" {
+  input            = var.environment
+  triggers_replace = local.bootstrap_replace_fingerprint
+}
+
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
@@ -118,13 +123,7 @@ resource "aws_instance" "app" {
     http_tokens   = "required"
   }
 
-  user_data = base64encode(templatefile("${path.module}/user-data.sh", {
-    project_name   = var.project_name
-    mongo_url      = "mongodb://${var.documentdb_username}:${var.documentdb_password}@${aws_docdb_cluster.main.endpoint}:27017/${local.database_name}?tls=false&retryWrites=false&directConnection=true"
-    database_name  = local.database_name
-    jwt_secret_key = var.jwt_secret_key
-    openai_api_key = var.openai_api_key
-  }))
+  user_data = base64encode(local.rendered_user_data)
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-app-server"
@@ -134,6 +133,9 @@ resource "aws_instance" "app" {
 
   lifecycle {
     ignore_changes = [ami, user_data]
+    replace_triggered_by = [
+      terraform_data.bootstrap_fingerprint
+    ]
   }
 }
 

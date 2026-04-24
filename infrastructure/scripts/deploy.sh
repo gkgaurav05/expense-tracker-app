@@ -232,6 +232,7 @@ MAX_POLLS=$(((SSM_COMMAND_TIMEOUT_SECONDS + SSM_COMMAND_POLL_INTERVAL_SECONDS - 
 LAST_STATUS=""
 STATUS="Pending"
 STATUS_DETAILS=""
+HEARTBEAT_INTERVAL_POLLS="${SSM_HEARTBEAT_INTERVAL_POLLS:-6}"
 
 for attempt in $(seq 1 "${MAX_POLLS}"); do
   set +e
@@ -267,6 +268,10 @@ for attempt in $(seq 1 "${MAX_POLLS}"); do
       break
       ;;
     Pending|InProgress|Delayed)
+      if [ "${attempt}" -eq 1 ] || [ $((attempt % HEARTBEAT_INTERVAL_POLLS)) -eq 0 ]; then
+        ELAPSED_SECONDS=$((attempt * SSM_COMMAND_POLL_INTERVAL_SECONDS))
+        echo "SSM command still ${STATUS_DETAILS} after ${ELAPSED_SECONDS}s (${attempt}/${MAX_POLLS})"
+      fi
       sleep "${SSM_COMMAND_POLL_INTERVAL_SECONDS}"
       ;;
     *)

@@ -9,7 +9,11 @@ echo "Starting user-data script at $(date)"
 dnf update -y
 
 # Install core packages
-dnf install -y awscli curl docker git nginx
+dnf install -y awscli docker git nginx
+
+if ! command -v curl >/dev/null 2>&1; then
+  dnf install -y curl-minimal || dnf install -y curl
+fi
 
 # Ensure SSM agent is available for workflow-driven deployments
 if ! rpm -q amazon-ssm-agent >/dev/null 2>&1; then
