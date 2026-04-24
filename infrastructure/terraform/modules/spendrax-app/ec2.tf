@@ -101,7 +101,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
-  key_name               = var.key_pair_name
+  key_name               = local.ssh_enabled ? var.key_pair_name : null
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name

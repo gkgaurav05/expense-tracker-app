@@ -56,12 +56,16 @@ resource "aws_security_group" "app" {
   description = "Security group for ${local.name_prefix} application"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_ssh_cidr]
+  dynamic "ingress" {
+    for_each = local.ssh_enabled ? [1] : []
+
+    content {
+      description = "SSH"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [var.allowed_ssh_cidr]
+    }
   }
 
   ingress {

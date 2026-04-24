@@ -28,6 +28,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "deployment_artifa
 }
 
 resource "aws_s3_bucket_public_access_block" "deployment_artifacts" {
+  count = var.manage_artifact_bucket_public_access_block ? 1 : 0
+
   bucket                  = aws_s3_bucket.deployment_artifacts.id
   block_public_acls       = true
   block_public_policy     = true
