@@ -4,8 +4,10 @@ This folder manages the IAM policy needed by GitHub Actions to:
 
 - bootstrap the Terraform remote state bucket and DynamoDB lock table
 - apply the main Terraform stack
-- upload application release bundles to S3
+- create and upload application release bundles to environment-specific S3 buckets
 - trigger application deployment on EC2 through AWS Systems Manager (SSM)
+
+The generated deploy policy is intended for a shared GitHub Actions user. It allows deployment artifact bucket access across `test`, `staging`, and `prod` naming patterns for the configured `project_name`, so you do not need a separate IAM policy per environment just to create release buckets.
 
 Recommended usage for your current flow:
 

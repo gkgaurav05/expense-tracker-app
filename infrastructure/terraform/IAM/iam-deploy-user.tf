@@ -63,7 +63,7 @@ data "aws_iam_policy_document" "github_actions_deployer" {
     ]
     resources = [
       "arn:aws:s3:::${var.project_name}-terraform-state-*",
-      "arn:aws:s3:::${var.project_name}-${var.environment}-deployments-*"
+      "arn:aws:s3:::${var.project_name}-*-deployments-*"
     ]
   }
 
@@ -79,7 +79,7 @@ data "aws_iam_policy_document" "github_actions_deployer" {
     ]
     resources = [
       "arn:aws:s3:::${var.project_name}-terraform-state-*/*",
-      "arn:aws:s3:::${var.project_name}-${var.environment}-deployments-*/*"
+      "arn:aws:s3:::${var.project_name}-*-deployments-*/*"
     ]
   }
 
@@ -104,6 +104,7 @@ data "aws_iam_policy_document" "github_actions_deployer" {
     effect = "Allow"
     actions = [
       "iam:AttachRolePolicy",
+      "iam:AddRoleToInstanceProfile",
       "iam:CreateInstanceProfile",
       "iam:CreatePolicy",
       "iam:CreatePolicyVersion",
