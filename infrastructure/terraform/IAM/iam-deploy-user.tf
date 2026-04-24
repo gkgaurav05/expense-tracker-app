@@ -47,19 +47,10 @@ data "aws_iam_policy_document" "github_actions_deployer" {
     actions = [
       "s3:CreateBucket",
       "s3:DeleteBucket",
-      "s3:GetBucketLocation",
-      "s3:GetBucketPolicy",
-      "s3:GetBucketVersioning",
-      "s3:GetEncryptionConfiguration",
-      "s3:GetLifecycleConfiguration",
+      "s3:Get*",
       "s3:ListBucket",
       "s3:ListBucketVersions",
-      "s3:PutEncryptionConfiguration",
-      "s3:PutBucketPublicAccessBlock",
-      "s3:PutBucketVersioning",
-      "s3:PutLifecycleConfiguration",
-      "s3:PutBucketTagging",
-      "s3:GetBucketTagging",
+      "s3:Put*",
       "s3:DeleteBucketPolicy"
     ]
     resources = [

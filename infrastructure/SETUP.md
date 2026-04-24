@@ -27,7 +27,7 @@ Internet → ALB (Port 80) → EC2 (Port 80)
 
 ## Step-by-Step Setup
 
-### Step 1: Create SSH Key Pair in AWS
+### Step 1: Optional SSH Key Pair In AWS
 
 ```bash
 # Create key pair via AWS Console or CLI
@@ -38,6 +38,8 @@ aws ec2 create-key-pair \
 
 chmod 600 ~/.ssh/spendrax-key.pem
 ```
+
+This is optional. GitHub Actions deploys the application through AWS Systems Manager (SSM), so Terraform can create the EC2 instance without any SSH key pair unless you explicitly want direct SSH access.
 
 ### Step 2: Configure Terraform Variables
 
@@ -53,8 +55,9 @@ nano terraform.tfvars
 
 Required variables:
 ```hcl
-key_pair_name         = "spendrax-key"
-allowed_ssh_cidr      = "YOUR_IP/32"  # For your own SSH access only; GitHub Actions deploys through SSM
+enable_ssh_access     = false
+key_pair_name         = ""            # Set only if enable_ssh_access = true
+allowed_ssh_cidr      = "YOUR_IP/32"  # Used only when enable_ssh_access = true
 documentdb_username   = "spendrax_admin"
 documentdb_password   = "YourSecurePassword123!"  # Min 8 characters
 jwt_secret_key        = "generate-a-strong-random-string"
@@ -87,7 +90,7 @@ Add these GitHub Actions repository variables:
 | `TF_VAR_PROJECT_NAME` | No | Terraform value for `project_name`, default `spendrax` |
 | `TF_VAR_KEY_PAIR_NAME` | No | Terraform value for `key_pair_name`, default `spendrax-key` |
 | `TF_VAR_ALLOWED_SSH_CIDR` | No | Terraform value for `allowed_ssh_cidr`, default `0.0.0.0/0` |
-| `TF_VAR_INSTANCE_TYPE` | No | Terraform value for `instance_type`, default `t3.small` |
+| `TF_VAR_INSTANCE_TYPE` | No | Terraform value for `instance_type`, default `t3.large` |
 | `TERRAFORM_ENV` | No | App deployment environment root override, default `test` on the `test` branch and `prod` on `main` |
 
 ### Step 5: Trigger The Deployment Workflow
@@ -234,7 +237,7 @@ docker stats
 
 | Resource | Monthly Cost |
 |----------|-------------|
-| EC2 t3.small | ~$15 |
+| EC2 t3.large | ~$60 |
 | Application Load Balancer | ~$16-18 |
 | DocumentDB db.t3.medium | ~$56 |
 | Elastic IP | Free (if attached) |

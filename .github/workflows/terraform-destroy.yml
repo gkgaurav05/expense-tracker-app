@@ -31,9 +31,11 @@ env:
   TF_IN_AUTOMATION: "true"
   TF_WORKING_DIR: infrastructure/terraform/envs/${{ inputs.environment }}
   TF_VAR_project_name: ${{ vars.TF_VAR_PROJECT_NAME || 'spendrax' }}
-  TF_VAR_key_pair_name: ${{ vars.TF_VAR_KEY_PAIR_NAME || 'spendrax-key' }}
+  TF_VAR_enable_ssh_access: ${{ vars.TF_VAR_ENABLE_SSH_ACCESS || 'false' }}
+  TF_VAR_key_pair_name: ${{ vars.TF_VAR_KEY_PAIR_NAME || '' }}
   TF_VAR_allowed_ssh_cidr: ${{ vars.TF_VAR_ALLOWED_SSH_CIDR || '0.0.0.0/0' }}
-  TF_VAR_instance_type: ${{ vars.TF_VAR_INSTANCE_TYPE || 't3.small' }}
+  TF_VAR_instance_type: ${{ vars.TF_VAR_INSTANCE_TYPE || 't3.large' }}
+  TF_VAR_manage_artifact_bucket_public_access_block: ${{ vars.TF_VAR_MANAGE_ARTIFACT_BUCKET_PUBLIC_ACCESS_BLOCK || 'false' }}
   TF_VAR_documentdb_password: ${{ secrets.TF_VAR_DOCUMENTDB_PASSWORD || secrets.DOCUMENTDB_PASSWORD }}
   TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY || secrets.JWT_SECRET_KEY }}
   TF_VAR_openai_api_key: ${{ secrets.TF_VAR_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}

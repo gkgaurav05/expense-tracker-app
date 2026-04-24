@@ -43,13 +43,19 @@ variable "availability_zone_suffixes" {
 variable "instance_type" {
   description = "EC2 instance type."
   type        = string
-  default     = "t3.small"
+  default     = "t3.large"
+}
+
+variable "enable_ssh_access" {
+  description = "Enable SSH access and attach an EC2 key pair."
+  type        = bool
+  default     = false
 }
 
 variable "key_pair_name" {
   description = "Name of the SSH key pair for EC2 access."
   type        = string
-  default     = "spendrax-key"
+  default     = ""
 }
 
 variable "allowed_ssh_cidr" {
@@ -117,6 +123,12 @@ variable "artifact_retention_days" {
   description = "How long deployment bundles should be retained in S3."
   type        = number
   default     = 30
+}
+
+variable "manage_artifact_bucket_public_access_block" {
+  description = "Manage aws_s3_bucket_public_access_block for the deployment artifacts bucket."
+  type        = bool
+  default     = false
 }
 
 variable "enable_alb_deletion_protection" {
