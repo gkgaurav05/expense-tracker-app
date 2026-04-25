@@ -1,18 +1,3 @@
-output "instance_id" {
-  description = "EC2 instance ID."
-  value       = aws_instance.app.id
-}
-
-output "ec2_private_ip" {
-  description = "EC2 private IP."
-  value       = aws_instance.app.private_ip
-}
-
-output "ssh_command" {
-  description = "SSH command via a jump host."
-  value       = "ssh -J user@jump-host ec2-user@${aws_instance.app.private_ip}"
-}
-
 output "app_url" {
   description = "Application URL via ALB."
   value       = "http://${aws_lb.app.dns_name}"
@@ -21,16 +6,6 @@ output "app_url" {
 output "alb_dns_name" {
   description = "ALB DNS name."
   value       = aws_lb.app.dns_name
-}
-
-output "deployment_artifacts_bucket" {
-  description = "S3 bucket used by GitHub Actions to upload application release bundles."
-  value       = aws_s3_bucket.deployment_artifacts.id
-}
-
-output "security_group_id" {
-  description = "Application security group ID."
-  value       = aws_security_group.app.id
 }
 
 output "vpc_id" {
@@ -52,4 +27,39 @@ output "documentdb_connection_string" {
   description = "DocumentDB connection string without password."
   value       = "mongodb://${var.documentdb_username}:<password>@${aws_docdb_cluster.main.endpoint}:${aws_docdb_cluster.main.port}/${local.database_name}?retryWrites=false"
   sensitive   = true
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster name."
+  value       = aws_ecs_cluster.main.name
+}
+
+output "frontend_service_name" {
+  description = "Frontend ECS service name."
+  value       = aws_ecs_service.frontend.name
+}
+
+output "backend_service_name" {
+  description = "Backend ECS service name."
+  value       = aws_ecs_service.backend.name
+}
+
+output "frontend_ecr_repository_url" {
+  description = "ECR repository URL for the frontend image."
+  value       = aws_ecr_repository.frontend.repository_url
+}
+
+output "backend_ecr_repository_url" {
+  description = "ECR repository URL for the backend image."
+  value       = aws_ecr_repository.backend.repository_url
+}
+
+output "frontend_target_group_arn" {
+  description = "ALB target group ARN for the frontend ECS service."
+  value       = aws_lb_target_group.frontend.arn
+}
+
+output "backend_target_group_arn" {
+  description = "ALB target group ARN for the backend ECS service."
+  value       = aws_lb_target_group.backend.arn
 }

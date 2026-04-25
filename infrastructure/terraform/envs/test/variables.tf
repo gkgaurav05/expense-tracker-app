@@ -119,6 +119,60 @@ variable "artifact_retention_days" {
   default     = 14
 }
 
+variable "frontend_image_tag" {
+  description = "Image tag to deploy for the frontend ECS service."
+  type        = string
+  default     = "bootstrap"
+}
+
+variable "backend_image_tag" {
+  description = "Image tag to deploy for the backend ECS service."
+  type        = string
+  default     = "bootstrap"
+}
+
+variable "frontend_desired_count" {
+  description = "Desired number of frontend ECS tasks."
+  type        = number
+  default     = 0
+}
+
+variable "backend_desired_count" {
+  description = "Desired number of backend ECS tasks."
+  type        = number
+  default     = 0
+}
+
+variable "frontend_task_cpu" {
+  description = "CPU units for the frontend ECS task."
+  type        = number
+  default     = 256
+}
+
+variable "frontend_task_memory" {
+  description = "Memory (MiB) for the frontend ECS task."
+  type        = number
+  default     = 512
+}
+
+variable "backend_task_cpu" {
+  description = "CPU units for the backend ECS task."
+  type        = number
+  default     = 512
+}
+
+variable "backend_task_memory" {
+  description = "Memory (MiB) for the backend ECS task."
+  type        = number
+  default     = 1024
+}
+
+variable "log_retention_days" {
+  description = "Retention in days for ECS service logs."
+  type        = number
+  default     = 14
+}
+
 variable "enable_alb_deletion_protection" {
   description = "Enable deletion protection on the ALB."
   type        = bool

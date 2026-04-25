@@ -51,6 +51,15 @@ module "app" {
   jwt_secret_key                     = var.jwt_secret_key
   openai_api_key                     = var.openai_api_key
   artifact_retention_days            = var.artifact_retention_days
+  frontend_image_tag                 = var.frontend_image_tag
+  backend_image_tag                  = var.backend_image_tag
+  frontend_desired_count             = var.frontend_desired_count
+  backend_desired_count              = var.backend_desired_count
+  frontend_task_cpu                  = var.frontend_task_cpu
+  frontend_task_memory               = var.frontend_task_memory
+  backend_task_cpu                   = var.backend_task_cpu
+  backend_task_memory                = var.backend_task_memory
+  log_retention_days                 = var.log_retention_days
   enable_alb_deletion_protection     = var.enable_alb_deletion_protection
 }
 
@@ -64,21 +73,6 @@ output "alb_dns_name" {
   value       = module.app.alb_dns_name
 }
 
-output "deployment_artifacts_bucket" {
-  description = "S3 bucket used by GitHub Actions to upload application release bundles."
-  value       = module.app.deployment_artifacts_bucket
-}
-
-output "instance_id" {
-  description = "EC2 instance ID."
-  value       = module.app.instance_id
-}
-
-output "ec2_private_ip" {
-  description = "EC2 private IP."
-  value       = module.app.ec2_private_ip
-}
-
 output "vpc_id" {
   description = "VPC ID."
   value       = module.app.vpc_id
@@ -87,4 +81,29 @@ output "vpc_id" {
 output "documentdb_endpoint" {
   description = "DocumentDB endpoint."
   value       = module.app.documentdb_endpoint
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster name."
+  value       = module.app.ecs_cluster_name
+}
+
+output "frontend_service_name" {
+  description = "Frontend ECS service name."
+  value       = module.app.frontend_service_name
+}
+
+output "backend_service_name" {
+  description = "Backend ECS service name."
+  value       = module.app.backend_service_name
+}
+
+output "frontend_ecr_repository_url" {
+  description = "Frontend ECR repository URL."
+  value       = module.app.frontend_ecr_repository_url
+}
+
+output "backend_ecr_repository_url" {
+  description = "Backend ECR repository URL."
+  value       = module.app.backend_ecr_repository_url
 }

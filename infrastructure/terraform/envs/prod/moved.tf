@@ -1,7 +1,5 @@
 # Migration helpers for the old root-level production Terraform state.
-# These blocks let Terraform move app resources under module.app without
-# recreating them, and forget bootstrap resources from the app state without
-# destroying the S3 state bucket or DynamoDB lock table.
+# Keep only one-to-one moves that still map cleanly to the ECS-based module.
 
 removed {
   from = aws_s3_bucket.terraform_state
@@ -81,11 +79,6 @@ moved {
 }
 
 moved {
-  from = aws_security_group.app
-  to   = module.app.aws_security_group.app
-}
-
-moved {
   from = aws_security_group.alb
   to   = module.app.aws_security_group.alb
 }
@@ -101,43 +94,8 @@ moved {
 }
 
 moved {
-  from = aws_lb_target_group.app
-  to   = module.app.aws_lb_target_group.app
-}
-
-moved {
-  from = aws_lb_target_group_attachment.app
-  to   = module.app.aws_lb_target_group_attachment.app
-}
-
-moved {
   from = aws_lb_listener.http
   to   = module.app.aws_lb_listener.http
-}
-
-moved {
-  from = aws_s3_bucket.deployment_artifacts
-  to   = module.app.aws_s3_bucket.deployment_artifacts
-}
-
-moved {
-  from = aws_s3_bucket_versioning.deployment_artifacts
-  to   = module.app.aws_s3_bucket_versioning.deployment_artifacts
-}
-
-moved {
-  from = aws_s3_bucket_server_side_encryption_configuration.deployment_artifacts
-  to   = module.app.aws_s3_bucket_server_side_encryption_configuration.deployment_artifacts
-}
-
-moved {
-  from = aws_s3_bucket_public_access_block.deployment_artifacts
-  to   = module.app.aws_s3_bucket_public_access_block.deployment_artifacts
-}
-
-moved {
-  from = aws_s3_bucket_lifecycle_configuration.deployment_artifacts
-  to   = module.app.aws_s3_bucket_lifecycle_configuration.deployment_artifacts
 }
 
 moved {
@@ -158,34 +116,4 @@ moved {
 moved {
   from = aws_docdb_cluster_instance.main
   to   = module.app.aws_docdb_cluster_instance.main
-}
-
-moved {
-  from = aws_iam_role.ec2_role
-  to   = module.app.aws_iam_role.ec2_role
-}
-
-moved {
-  from = aws_iam_role_policy.ec2_policy
-  to   = module.app.aws_iam_role_policy.ec2_policy
-}
-
-moved {
-  from = aws_iam_role_policy_attachment.ec2_ssm_managed_core
-  to   = module.app.aws_iam_role_policy_attachment.ec2_ssm_managed_core
-}
-
-moved {
-  from = aws_iam_instance_profile.ec2_profile
-  to   = module.app.aws_iam_instance_profile.ec2_profile
-}
-
-moved {
-  from = aws_instance.app
-  to   = module.app.aws_instance.app
-}
-
-moved {
-  from = aws_cloudwatch_log_group.app
-  to   = module.app.aws_cloudwatch_log_group.app
 }

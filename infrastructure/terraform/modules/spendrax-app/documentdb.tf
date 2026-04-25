@@ -1,37 +1,14 @@
-# Private subnets for DocumentDB.
-resource "aws_subnet" "private_1" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.private_subnet_cidrs[0]
-  availability_zone       = "${var.aws_region}${var.availability_zone_suffixes[0]}"
-  map_public_ip_on_launch = false
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-private-subnet-1"
-  })
-}
-
-resource "aws_subnet" "private_2" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.private_subnet_cidrs[1]
-  availability_zone       = "${var.aws_region}${var.availability_zone_suffixes[1]}"
-  map_public_ip_on_launch = false
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-private-subnet-2"
-  })
-}
-
 resource "aws_security_group" "documentdb" {
   name        = "${local.name_prefix}-documentdb-sg"
   description = "Security group for ${local.name_prefix} DocumentDB cluster"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "MongoDB from EC2"
+    description     = "MongoDB from backend ECS tasks"
     from_port       = 27017
     to_port         = 27017
     protocol        = "tcp"
-    security_groups = [aws_security_group.app.id]
+    security_groups = [aws_security_group.backend.id]
   }
 
   egress {
