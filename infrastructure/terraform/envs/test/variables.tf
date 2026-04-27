@@ -40,30 +40,6 @@ variable "availability_zone_suffixes" {
   default     = ["a", "b"]
 }
 
-variable "instance_type" {
-  description = "EC2 instance type."
-  type        = string
-  default     = "t3.small"
-}
-
-variable "key_pair_name" {
-  description = "Name of the SSH key pair for EC2 access."
-  type        = string
-  default     = "spendrax-key"
-}
-
-variable "allowed_ssh_cidr" {
-  description = "CIDR block allowed to SSH into EC2."
-  type        = string
-  default     = "0.0.0.0/0"
-}
-
-variable "domain_name" {
-  description = "Domain name for the application."
-  type        = string
-  default     = ""
-}
-
 variable "documentdb_username" {
   description = "DocumentDB master username."
   type        = string
@@ -111,12 +87,6 @@ variable "openai_api_key" {
   type        = string
   sensitive   = true
   default     = ""
-}
-
-variable "artifact_retention_days" {
-  description = "How long deployment bundles should be retained in S3."
-  type        = number
-  default     = 14
 }
 
 variable "frontend_image_tag" {

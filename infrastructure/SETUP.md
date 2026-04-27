@@ -57,7 +57,7 @@ This branch now has the core ECS deployment loop in place:
 - Terraform outputs expose ECS cluster, services, ECR repositories, and base task definitions
 - the deploy workflow builds images, pushes them to ECR, registers new task definition revisions, and updates ECS services
 
-The old EC2 + SSM deployment path is not the active deployment model for this branch anymore.
+The old EC2 + SSM deployment path is not the active deployment model for this branch anymore. The EC2-specific deploy scripts and legacy root-stack files have been removed from this branch so the ECS path is the only supported application delivery flow here.
 
 ## Prerequisites
 

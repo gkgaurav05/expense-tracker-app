@@ -13,6 +13,14 @@ infrastructure/terraform/
 
 Use the environment roots for normal infrastructure changes. Do not run Terraform from `infrastructure/terraform` itself.
 
+The old root-level EC2 app stack has been removed from this branch. The active Terraform entrypoints are now:
+
+- `bootstrap/`
+- `IAM/`
+- `envs/test`
+- `envs/staging`
+- `envs/prod`
+
 ## Bootstrap Remote State
 
 Run this once per AWS account, or import the existing state resources here if they were already created by the old root stack.

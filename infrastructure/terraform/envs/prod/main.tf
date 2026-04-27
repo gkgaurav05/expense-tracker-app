@@ -39,10 +39,6 @@ module "app" {
   public_subnet_cidrs                = var.public_subnet_cidrs
   private_subnet_cidrs               = var.private_subnet_cidrs
   availability_zone_suffixes         = var.availability_zone_suffixes
-  instance_type                      = var.instance_type
-  key_pair_name                      = var.key_pair_name
-  allowed_ssh_cidr                   = var.allowed_ssh_cidr
-  domain_name                        = var.domain_name
   documentdb_username                = var.documentdb_username
   documentdb_password                = var.documentdb_password
   documentdb_instance_class          = var.documentdb_instance_class
@@ -51,7 +47,6 @@ module "app" {
   documentdb_skip_final_snapshot     = var.documentdb_skip_final_snapshot
   jwt_secret_key                     = var.jwt_secret_key
   openai_api_key                     = var.openai_api_key
-  artifact_retention_days            = var.artifact_retention_days
   frontend_image_tag                 = var.frontend_image_tag
   backend_image_tag                  = var.backend_image_tag
   frontend_desired_count             = var.frontend_desired_count
