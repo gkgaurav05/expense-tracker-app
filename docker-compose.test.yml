@@ -93,6 +93,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      NGINX_API_PROXY_TARGET: http://backend:8001
     depends_on:
       backend:
         condition: service_healthy

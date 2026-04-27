@@ -79,6 +79,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      - NGINX_API_PROXY_TARGET=http://backend:8001
     container_name: spendrax-frontend
     restart: unless-stopped
     ports:
