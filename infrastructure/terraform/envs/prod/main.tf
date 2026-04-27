@@ -61,6 +61,7 @@ module "app" {
   backend_task_cpu                   = var.backend_task_cpu
   backend_task_memory                = var.backend_task_memory
   log_retention_days                 = var.log_retention_days
+  force_delete_ecr_repositories      = var.force_delete_ecr_repositories
   enable_alb_deletion_protection     = var.enable_alb_deletion_protection
 }
 
@@ -72,6 +73,11 @@ output "app_url" {
 output "alb_dns_name" {
   description = "ALB DNS name."
   value       = module.app.alb_dns_name
+}
+
+output "alb_arn" {
+  description = "ALB ARN."
+  value       = module.app.alb_arn
 }
 
 output "vpc_id" {
@@ -97,6 +103,16 @@ output "frontend_service_name" {
 output "backend_service_name" {
   description = "Backend ECS service name."
   value       = module.app.backend_service_name
+}
+
+output "frontend_task_definition_arn" {
+  description = "Terraform-managed frontend task definition ARN."
+  value       = module.app.frontend_task_definition_arn
+}
+
+output "backend_task_definition_arn" {
+  description = "Terraform-managed backend task definition ARN."
+  value       = module.app.backend_task_definition_arn
 }
 
 output "frontend_ecr_repository_url" {

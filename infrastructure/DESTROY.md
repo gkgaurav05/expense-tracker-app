@@ -16,12 +16,14 @@ The workflow runs:
 
 ```bash
 terraform init -backend-config=backend.hcl
+aws elbv2 modify-load-balancer-attributes --load-balancer-arn <alb-arn> --attributes Key=deletion_protection.enabled,Value=false
 terraform validate
 terraform plan -destroy -out=destroy.tfplan
 terraform apply -auto-approve destroy.tfplan
 ```
 
 The state bucket and lock table are not part of the app environment roots, so destroying test or staging does not delete Terraform state.
+The app ECR repositories are configured to force-delete any remaining images during destroy, so image tags left behind by deployments do not block environment teardown.
 
 ## Local Destroy
 
@@ -42,4 +44,4 @@ Use the matching environment folder and verify the backend key before applying:
 
 ## Production Safety
 
-For production, do a separate destroy plan review and require an approval step. If ALB deletion protection is enabled, Terraform will block deletion until you intentionally disable it and apply that change first.
+For production, do a separate destroy plan review and require an approval step. The workflow now disables ALB deletion protection automatically before the destroy plan runs, but production teardown should still stay an explicit, approval-gated action.

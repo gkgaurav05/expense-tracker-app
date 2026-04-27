@@ -191,6 +191,13 @@ resource "aws_ecs_service" "frontend" {
     Name = "${local.name_prefix}-frontend-service"
   })
 
+  lifecycle {
+    ignore_changes = [
+      desired_count,
+      task_definition
+    ]
+  }
+
   depends_on = [aws_lb_listener.http]
 }
 
@@ -225,6 +232,13 @@ resource "aws_ecs_service" "backend" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-backend-service"
   })
+
+  lifecycle {
+    ignore_changes = [
+      desired_count,
+      task_definition
+    ]
+  }
 
   depends_on = [aws_lb_listener_rule.backend_api]
 }

@@ -17,7 +17,7 @@ variable "create_access_key" {
 }
 
 variable "environment" {
-  description = "Deployment environment (e.g., dev, staging, prod)"
+  description = "Label used for policy naming and tagging. This policy can be shared across all app environments."
   type        = string
   default     = "prod"
 }

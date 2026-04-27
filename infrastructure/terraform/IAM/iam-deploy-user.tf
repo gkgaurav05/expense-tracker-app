@@ -1,4 +1,4 @@
-# IAM policy for GitHub Actions deployment.
+# IAM policy for GitHub Actions Terraform and ECS deployments.
 # Use create_user = true if you want Terraform to create the IAM user as well.
 
 locals {
@@ -20,55 +20,42 @@ resource "aws_iam_user" "deployer" {
 
 data "aws_iam_policy_document" "github_actions_deployer" {
   statement {
-    sid    = "TerraformInfrastructure"
+    sid    = "TerraformInfrastructureAndEcsDelivery"
     effect = "Allow"
     actions = [
       "ec2:*",
+      "ecs:*",
+      "ecr:*",
       "elasticloadbalancing:*",
+      "docdb:*",
       "rds:*",
+      "application-autoscaling:*",
       "cloudwatch:*",
       "logs:*",
-      "ssm:DescribeInstanceInformation",
-      "ssm:GetCommandInvocation",
-      "ssm:ListCommandInvocations",
-      "ssm:ListCommands",
-      "ssm:SendCommand",
-      "ssm:CancelCommand",
-      "ssm:StartSession",
-      "ssm:TerminateSession",
       "sts:GetCallerIdentity"
     ]
     resources = ["*"]
   }
 
   statement {
-    sid    = "TerraformBackendStorage"
+    sid    = "TerraformStateBucket"
     effect = "Allow"
     actions = [
       "s3:CreateBucket",
       "s3:DeleteBucket",
-      "s3:GetBucketLocation",
-      "s3:GetBucketVersioning",
-      "s3:GetEncryptionConfiguration",
-      "s3:GetLifecycleConfiguration",
+      "s3:DeleteBucketPolicy",
+      "s3:Get*",
       "s3:ListBucket",
       "s3:ListBucketVersions",
-      "s3:PutBucketEncryption",
-      "s3:PutBucketPublicAccessBlock",
-      "s3:PutBucketVersioning",
-      "s3:PutLifecycleConfiguration",
-      "s3:PutBucketTagging",
-      "s3:GetBucketTagging",
-      "s3:DeleteBucketPolicy"
+      "s3:Put*"
     ]
     resources = [
-      "arn:aws:s3:::${var.project_name}-terraform-state-*",
-      "arn:aws:s3:::${var.project_name}-${var.environment}-deployments-*"
+      "arn:aws:s3:::${var.project_name}-terraform-state-*"
     ]
   }
 
   statement {
-    sid    = "TerraformBackendObjects"
+    sid    = "TerraformStateObjects"
     effect = "Allow"
     actions = [
       "s3:GetObject",
@@ -78,8 +65,7 @@ data "aws_iam_policy_document" "github_actions_deployer" {
       "s3:ListMultipartUploadParts"
     ]
     resources = [
-      "arn:aws:s3:::${var.project_name}-terraform-state-*/*",
-      "arn:aws:s3:::${var.project_name}-${var.environment}-deployments-*/*"
+      "arn:aws:s3:::${var.project_name}-terraform-state-*/*"
     ]
   }
 
@@ -100,10 +86,11 @@ data "aws_iam_policy_document" "github_actions_deployer" {
   }
 
   statement {
-    sid    = "IamForEc2AndAlb"
+    sid    = "IamForTerraformAndEcsRoles"
     effect = "Allow"
     actions = [
       "iam:AttachRolePolicy",
+      "iam:AddRoleToInstanceProfile",
       "iam:CreateInstanceProfile",
       "iam:CreatePolicy",
       "iam:CreatePolicyVersion",
@@ -122,7 +109,9 @@ data "aws_iam_policy_document" "github_actions_deployer" {
       "iam:GetRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
+      "iam:ListPolicies",
       "iam:ListPolicyVersions",
+      "iam:ListRoles",
       "iam:ListRolePolicies",
       "iam:PassRole",
       "iam:PutRolePolicy",

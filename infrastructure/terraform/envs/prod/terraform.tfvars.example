@@ -29,5 +29,6 @@ frontend_task_memory   = 512
 backend_task_cpu       = 512
 backend_task_memory    = 1024
 log_retention_days     = 14
+force_delete_ecr_repositories = true
 
 enable_alb_deletion_protection = false

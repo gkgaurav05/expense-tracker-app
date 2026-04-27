@@ -13,19 +13,28 @@ on:
         default: "false"
         type: boolean
       deploy_application:
-        description: Deploy the application bundle to EC2
+        description: Build images and deploy the application to ECS
         required: false
         default: "true"
         type: boolean
+      target_environment:
+        description: Target environment for manual deployment
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - staging
+          - prod
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || github.ref }}
   cancel-in-progress: false
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  TERRAFORM_ENV: ${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
-  TF_WORKING_DIR: infrastructure/terraform/envs/${{ vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || 'prod') }}
+  TERRAFORM_ENV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || github.ref_name == 'staging' && 'staging' || 'prod') }}
+  TF_WORKING_DIR: infrastructure/terraform/envs/${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || vars.TERRAFORM_ENV || (github.ref_name == 'test' && 'test' || github.ref_name == 'staging' && 'staging' || 'prod') }}
 
 jobs:
   detect-changes:
@@ -45,13 +54,10 @@ jobs:
           filters: |
             infrastructure:
               - 'infrastructure/**'
-              - 'docker-compose.prod.yml'
               - '.github/workflows/deploy.yml'
             application:
               - 'backend/**'
               - 'frontend/**'
-              - 'docker-compose.prod.yml'
-              - 'infrastructure/scripts/deploy.sh'
 
   frontend-checks:
     name: Frontend Regressions
@@ -393,11 +399,17 @@ jobs:
     name: Check Infrastructure
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test]
     if: |
+      always() &&
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
       (
-        needs.detect-changes.outputs.app_changed == 'true' ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
+        github.event_name == 'workflow_dispatch' ||
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/test' ||
+        github.ref == 'refs/heads/staging'
+      ) &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true') ||
+        (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.app_changed == 'true')
       ) &&
       (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
       (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
@@ -412,7 +424,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -421,7 +433,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Check Terraform backend and outputs
+      - name: Check Terraform backend and ECS outputs
         id: check
         run: |
           set +e
@@ -442,19 +454,45 @@ jobs:
           fi
 
           set +e
-          INSTANCE_ID=$(terraform -chdir="${TF_WORKING_DIR}" output -raw instance_id 2>/tmp/terraform-instance-id.err)
-          INSTANCE_STATUS=$?
-          ARTIFACT_BUCKET=$(terraform -chdir="${TF_WORKING_DIR}" output -raw deployment_artifacts_bucket 2>/tmp/terraform-artifact-bucket.err)
-          ARTIFACT_STATUS=$?
           APP_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw app_url 2>/tmp/terraform-app-url.err)
           APP_URL_STATUS=$?
+          ECS_CLUSTER_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw ecs_cluster_name 2>/tmp/terraform-ecs-cluster.err)
+          ECS_CLUSTER_STATUS=$?
+          FRONTEND_SERVICE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_service_name 2>/tmp/terraform-frontend-service.err)
+          FRONTEND_SERVICE_STATUS=$?
+          BACKEND_SERVICE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_service_name 2>/tmp/terraform-backend-service.err)
+          BACKEND_SERVICE_STATUS=$?
+          FRONTEND_TASK_DEFINITION_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_task_definition_arn 2>/tmp/terraform-frontend-taskdef.err)
+          FRONTEND_TASK_DEFINITION_STATUS=$?
+          BACKEND_TASK_DEFINITION_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_task_definition_arn 2>/tmp/terraform-backend-taskdef.err)
+          BACKEND_TASK_DEFINITION_STATUS=$?
+          FRONTEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_ecr_repository_url 2>/tmp/terraform-frontend-ecr.err)
+          FRONTEND_ECR_REPOSITORY_STATUS=$?
+          BACKEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_ecr_repository_url 2>/tmp/terraform-backend-ecr.err)
+          BACKEND_ECR_REPOSITORY_STATUS=$?
           set -e
 
-          if [ "${INSTANCE_STATUS}" -ne 0 ] || [ "${ARTIFACT_STATUS}" -ne 0 ] || [ "${APP_URL_STATUS}" -ne 0 ] || [ -z "${INSTANCE_ID}" ] || [ -z "${ARTIFACT_BUCKET}" ] || [ -z "${APP_URL}" ]; then
+          if [ "${APP_URL_STATUS}" -ne 0 ] || [ "${ECS_CLUSTER_STATUS}" -ne 0 ] || [ "${FRONTEND_SERVICE_STATUS}" -ne 0 ] || [ "${BACKEND_SERVICE_STATUS}" -ne 0 ] || [ "${FRONTEND_TASK_DEFINITION_STATUS}" -ne 0 ] || [ "${BACKEND_TASK_DEFINITION_STATUS}" -ne 0 ] || [ "${FRONTEND_ECR_REPOSITORY_STATUS}" -ne 0 ] || [ "${BACKEND_ECR_REPOSITORY_STATUS}" -ne 0 ] || [ -z "${APP_URL}" ] || [ -z "${ECS_CLUSTER_NAME}" ] || [ -z "${FRONTEND_SERVICE_NAME}" ] || [ -z "${BACKEND_SERVICE_NAME}" ] || [ -z "${FRONTEND_TASK_DEFINITION_ARN}" ] || [ -z "${BACKEND_TASK_DEFINITION_ARN}" ] || [ -z "${FRONTEND_ECR_REPOSITORY_URL}" ] || [ -z "${BACKEND_ECR_REPOSITORY_URL}" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "## Deployment skipped" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Terraform state for \`${TERRAFORM_ENV}\` does not have the required deployment outputs yet." >> "$GITHUB_STEP_SUMMARY"
+            echo "Terraform state for \`${TERRAFORM_ENV}\` does not have the required ECS deployment outputs yet." >> "$GITHUB_STEP_SUMMARY"
+            echo "Run the \`Terraform Apply\` workflow for \`${TERRAFORM_ENV}\` first." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          SERVICE_FAILURES=$(aws ecs describe-services \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'length(failures)' \
+            --output text 2>/dev/null || echo "2")
+
+          if [ "${SERVICE_FAILURES}" != "0" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "## Deployment skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "ECS services for \`${TERRAFORM_ENV}\` are not ready yet." >> "$GITHUB_STEP_SUMMARY"
             echo "Run the \`Terraform Apply\` workflow for \`${TERRAFORM_ENV}\` first." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -462,17 +500,23 @@ jobs:
           echo "available=true" >> "$GITHUB_OUTPUT"
           echo "## Infrastructure check" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Infrastructure is available for \`${TERRAFORM_ENV}\`. Proceeding with application deployment." >> "$GITHUB_STEP_SUMMARY"
+          echo "ECS infrastructure is available for \`${TERRAFORM_ENV}\`. Proceeding with image publish and service rollout." >> "$GITHUB_STEP_SUMMARY"
 
   deploy-application:
     name: Deploy Application
     needs: [detect-changes, frontend-checks, backend-regressions, backend-integration, docker-build-check, smoke-test, check-infrastructure]
     if: |
+      always() &&
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test') &&
       (
-        needs.detect-changes.outputs.app_changed == 'true' ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true')
+        github.event_name == 'workflow_dispatch' ||
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/test' ||
+        github.ref == 'refs/heads/staging'
+      ) &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_application == 'true') ||
+        (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.app_changed == 'true')
       ) &&
       (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped') &&
       (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
@@ -481,13 +525,13 @@ jobs:
       (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') &&
       needs.check-infrastructure.outputs.available == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'test' && 'test' || 'production' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'prod' && 'production' || github.event_name != 'workflow_dispatch' && github.ref_name == 'main' && 'production' || github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || github.ref_name == 'test' && 'test' || github.ref_name == 'staging' && 'staging' || 'production' }}
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -495,6 +539,9 @@ jobs:
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Terraform init
         run: |
@@ -505,60 +552,179 @@ jobs:
 
       - name: Read deployment outputs
         run: |
-          INSTANCE_ID=$(terraform -chdir="${TF_WORKING_DIR}" output -raw instance_id)
-          ARTIFACT_BUCKET=$(terraform -chdir="${TF_WORKING_DIR}" output -raw deployment_artifacts_bucket)
           APP_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw app_url)
+          ECS_CLUSTER_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw ecs_cluster_name)
+          FRONTEND_SERVICE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_service_name)
+          BACKEND_SERVICE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_service_name)
+          FRONTEND_TASK_DEFINITION_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_task_definition_arn)
+          BACKEND_TASK_DEFINITION_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_task_definition_arn)
+          FRONTEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_ecr_repository_url)
+          BACKEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_ecr_repository_url)
 
-          echo "INSTANCE_ID=${INSTANCE_ID}" >> "$GITHUB_ENV"
-          echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}" >> "$GITHUB_ENV"
           echo "APP_URL=${APP_URL}" >> "$GITHUB_ENV"
+          echo "ECS_CLUSTER_NAME=${ECS_CLUSTER_NAME}" >> "$GITHUB_ENV"
+          echo "FRONTEND_SERVICE_NAME=${FRONTEND_SERVICE_NAME}" >> "$GITHUB_ENV"
+          echo "BACKEND_SERVICE_NAME=${BACKEND_SERVICE_NAME}" >> "$GITHUB_ENV"
+          echo "FRONTEND_TASK_DEFINITION_ARN=${FRONTEND_TASK_DEFINITION_ARN}" >> "$GITHUB_ENV"
+          echo "BACKEND_TASK_DEFINITION_ARN=${BACKEND_TASK_DEFINITION_ARN}" >> "$GITHUB_ENV"
+          echo "FRONTEND_ECR_REPOSITORY_URL=${FRONTEND_ECR_REPOSITORY_URL}" >> "$GITHUB_ENV"
+          echo "BACKEND_ECR_REPOSITORY_URL=${BACKEND_ECR_REPOSITORY_URL}" >> "$GITHUB_ENV"
 
-      - name: Wait for EC2 status checks
-        run: aws ec2 wait instance-status-ok --instance-ids "${INSTANCE_ID}" --region "${AWS_REGION}"
-
-      - name: Wait for SSM connectivity
+      - name: Prepare release metadata
         run: |
-          for attempt in $(seq 1 30); do
-            STATUS=$(aws ssm describe-instance-information \
-              --region "${AWS_REGION}" \
-              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
-              --query 'InstanceInformationList[0].PingStatus' \
-              --output text 2>/dev/null || true)
-
-            if [ "${STATUS}" = "Online" ]; then
-              echo "SSM is online for ${INSTANCE_ID}"
-              exit 0
-            fi
-
-            echo "Waiting for SSM agent to come online (attempt ${attempt}/30)"
-            sleep 10
-          done
-
-          echo "Timed out waiting for SSM connectivity on ${INSTANCE_ID}"
-          exit 1
-
-      - name: Create release bundle
-        run: git archive --format=tar.gz --output=app-release.tar.gz "${GITHUB_SHA}"
-
-      - name: Upload release bundle to S3
-        run: |
-          RELEASE_KEY="releases/${GITHUB_SHA}-${GITHUB_RUN_ID}.tar.gz"
+          IMAGE_TAG="${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
           RELEASE_ID="${GITHUB_SHA::7}-${GITHUB_RUN_ID}"
 
-          aws s3 cp app-release.tar.gz "s3://${ARTIFACT_BUCKET}/${RELEASE_KEY}"
-
-          echo "RELEASE_KEY=${RELEASE_KEY}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
 
-      - name: Deploy application via SSM
-        run: ./infrastructure/scripts/deploy.sh "${INSTANCE_ID}" "${ARTIFACT_BUCKET}" "${RELEASE_KEY}" "${RELEASE_ID}" "${AWS_REGION}"
+      - name: Build backend image
+        run: |
+          docker build \
+            -t "${BACKEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}" \
+            ./backend
+
+      - name: Build frontend image
+        run: |
+          docker build \
+            --build-arg REACT_APP_BACKEND_URL= \
+            -t "${FRONTEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}" \
+            ./frontend
+
+      - name: Push backend image to ECR
+        run: docker push "${BACKEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+
+      - name: Push frontend image to ECR
+        run: docker push "${FRONTEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+
+      - name: Resolve desired ECS service counts
+        run: |
+          if [ "${TERRAFORM_ENV}" = "prod" ]; then
+            DEFAULT_DESIRED_COUNT=2
+          else
+            DEFAULT_DESIRED_COUNT=1
+          fi
+
+          CURRENT_FRONTEND_DESIRED=$(aws ecs describe-services \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].desiredCount' \
+            --output text)
+
+          CURRENT_BACKEND_DESIRED=$(aws ecs describe-services \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${BACKEND_SERVICE_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].desiredCount' \
+            --output text)
+
+          if [ -z "${CURRENT_FRONTEND_DESIRED}" ] || [ "${CURRENT_FRONTEND_DESIRED}" = "None" ] || [ "${CURRENT_FRONTEND_DESIRED}" = "0" ]; then
+            FRONTEND_DESIRED_COUNT="${DEFAULT_DESIRED_COUNT}"
+          else
+            FRONTEND_DESIRED_COUNT="${CURRENT_FRONTEND_DESIRED}"
+          fi
+
+          if [ -z "${CURRENT_BACKEND_DESIRED}" ] || [ "${CURRENT_BACKEND_DESIRED}" = "None" ] || [ "${CURRENT_BACKEND_DESIRED}" = "0" ]; then
+            BACKEND_DESIRED_COUNT="${DEFAULT_DESIRED_COUNT}"
+          else
+            BACKEND_DESIRED_COUNT="${CURRENT_BACKEND_DESIRED}"
+          fi
+
+          echo "FRONTEND_DESIRED_COUNT=${FRONTEND_DESIRED_COUNT}" >> "$GITHUB_ENV"
+          echo "BACKEND_DESIRED_COUNT=${BACKEND_DESIRED_COUNT}" >> "$GITHUB_ENV"
+
+      - name: Register frontend task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${FRONTEND_TASK_DEFINITION_ARN}" \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition' \
+            --output json > frontend-task-definition.json
+
+          jq --arg image "${FRONTEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+            | .containerDefinitions = (.containerDefinitions | map(
+                if .name == "frontend" then .image = $image else . end
+              ))
+          ' frontend-task-definition.json > frontend-task-definition-register.json
+
+          FRONTEND_DEPLOY_TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://frontend-task-definition-register.json \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "FRONTEND_DEPLOY_TASK_DEFINITION_ARN=${FRONTEND_DEPLOY_TASK_DEFINITION_ARN}" >> "$GITHUB_ENV"
+
+      - name: Register backend task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${BACKEND_TASK_DEFINITION_ARN}" \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition' \
+            --output json > backend-task-definition.json
+
+          jq --arg image "${BACKEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+            | .containerDefinitions = (.containerDefinitions | map(
+                if .name == "backend" then .image = $image else . end
+              ))
+          ' backend-task-definition.json > backend-task-definition-register.json
+
+          BACKEND_DEPLOY_TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://backend-task-definition-register.json \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "BACKEND_DEPLOY_TASK_DEFINITION_ARN=${BACKEND_DEPLOY_TASK_DEFINITION_ARN}" >> "$GITHUB_ENV"
+
+      - name: Update ECS services
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --service "${FRONTEND_SERVICE_NAME}" \
+            --task-definition "${FRONTEND_DEPLOY_TASK_DEFINITION_ARN}" \
+            --desired-count "${FRONTEND_DESIRED_COUNT}" \
+            --region "${AWS_REGION}"
+
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --service "${BACKEND_SERVICE_NAME}" \
+            --task-definition "${BACKEND_DEPLOY_TASK_DEFINITION_ARN}" \
+            --desired-count "${BACKEND_DESIRED_COUNT}" \
+            --region "${AWS_REGION}"
+
+      - name: Wait for ECS services to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" \
+            --region "${AWS_REGION}"
 
       - name: Verify deployed application health
         run: |
           ROOT_URL="${APP_URL}"
           API_HEALTH_URL="${APP_URL}/api/health"
 
-          for attempt in $(seq 1 10); do
+          for attempt in $(seq 1 18); do
             ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${ROOT_URL}" || true)
             HEALTH_BODY=$(curl -fsS "${API_HEALTH_URL}" || true)
 
@@ -567,7 +733,7 @@ jobs:
               exit 0
             fi
 
-            echo "Health check attempt ${attempt}/10 did not pass yet"
+            echo "Health check attempt ${attempt}/18 did not pass yet"
             sleep 10
           done
 
@@ -583,7 +749,10 @@ jobs:
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${GITHUB_SHA}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Release | ${RELEASE_ID} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Instance ID | ${INSTANCE_ID} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Artifact bucket | ${ARTIFACT_BUCKET} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | ${TERRAFORM_ENV} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ECS Cluster | ${ECS_CLUSTER_NAME} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Frontend Service | ${FRONTEND_SERVICE_NAME} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Backend Service | ${BACKEND_SERVICE_NAME} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Tag | ${IMAGE_TAG} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| App URL | ${APP_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Status | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"

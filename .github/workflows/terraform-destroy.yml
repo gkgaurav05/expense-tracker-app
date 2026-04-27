@@ -65,7 +65,7 @@ jobs:
           terraform_version: 1.14.8
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -77,6 +77,22 @@ jobs:
       - name: Terraform init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -backend-config=backend.hcl
+
+      - name: Disable ALB deletion protection when needed
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          set +e
+          ALB_ARN=$(terraform output -raw alb_arn 2>/tmp/terraform-alb-arn.err)
+          ALB_STATUS=$?
+          set -e
+
+          if [ "${ALB_STATUS}" -eq 0 ] && [ -n "${ALB_ARN}" ]; then
+            aws elbv2 modify-load-balancer-attributes \
+              --load-balancer-arn "${ALB_ARN}" \
+              --attributes Key=deletion_protection.enabled,Value=false
+          else
+            echo "No ALB ARN found in state, skipping deletion protection disable step."
+          fi
 
       - name: Terraform validate
         working-directory: ${{ env.TF_WORKING_DIR }}

@@ -173,6 +173,12 @@ variable "log_retention_days" {
   default     = 14
 }
 
+variable "force_delete_ecr_repositories" {
+  description = "Force-delete ECR repositories during destroy, including any images they still contain."
+  type        = bool
+  default     = true
+}
+
 variable "enable_alb_deletion_protection" {
   description = "Enable deletion protection on the ALB."
   type        = bool

@@ -1,75 +1,135 @@
 # AWS Infrastructure Setup Guide
 
-This guide walks you through deploying Spendrax to AWS using the EC2 + Docker Compose approach, with GitHub Actions applying infrastructure and then deploying the application automatically.
+This guide reflects the current `ecs-deploy` branch work: Phase 2 of the move from the old EC2 deployment model to `ECS Fargate + ECR + ALB`.
 
-For a more detailed beginner-friendly walkthrough, see [AUTOMATED_WORKFLOW_DEPLOYMENT_GUIDE.md](/Users/gaurav.kumar/workspace/expense-tracker-app/infrastructure/AUTOMATED_WORKFLOW_DEPLOYMENT_GUIDE.md).
+Terraform now provisions the ECS runtime infrastructure, and the `CI/CD Pipeline` workflow now builds frontend and backend images, pushes them to ECR, registers new ECS task definition revisions, and rolls the services forward.
 
-## Prerequisites
+For the Terraform layout itself, see [infrastructure/terraform/README.md](/Users/gaurav.kumar/workspace/expense-tracker-app/infrastructure/terraform/README.md).
 
-1. **AWS Account** with appropriate permissions
-2. **AWS CLI** installed and configured (`aws configure`)
-3. **Terraform** installed (v1.7+)
+## What The ECS Deployment Path Creates
+
+Applying the environment stack now creates:
+
+- a VPC with public and private subnets
+- an internet-facing ALB
+- a NAT gateway for private task egress
+- an ECS cluster
+- frontend and backend ECS services
+- frontend and backend ECR repositories
+- CloudWatch log groups for both services
+- a private DocumentDB cluster
+
+The Terraform-managed ECS services still default to:
+
+- `frontend_desired_count = 0`
+- `backend_desired_count = 0`
+- `frontend_image_tag = "bootstrap"`
+- `backend_image_tag = "bootstrap"`
+
+That is intentional. Terraform creates the platform with a safe zero-task baseline, and the deployment workflow is responsible for publishing images and moving the services to live task revisions.
 
 ## Architecture Overview
 
+```text
+Internet
+  |
+  v
+ALB (public subnets)
+  |-- "/" and other frontend paths ----> ECS frontend service (private subnets)
+  |
+  '-- "/api/*" ------------------------> ECS backend service (private subnets)
+                                             |
+                                             v
+                                      DocumentDB (private subnets)
+
+GitHub Actions / local Terraform
+  |
+  v
+ECR repositories (frontend + backend images)
 ```
-Internet → ALB (Port 80) → EC2 (Port 80)
-                                  └── Nginx (reverse proxy)
-                                        ├── Frontend (Port 3000)
-                                        └── Backend (Port 8001) → DocumentDB (Private Subnet)
-```
 
-**Key components:**
-- **ALB** — Application Load Balancer handles incoming traffic, provides stable DNS
-- **EC2** — Single instance running Docker containers (public subnet)
-- **Nginx** — Reverse proxy on EC2, routes /api/* to backend
-- **DocumentDB** — AWS managed MongoDB-compatible database (private subnet)
+## Current Status Of This Branch
 
-## Step-by-Step Setup
+This branch now has the core ECS deployment loop in place:
 
-### Step 1: Create SSH Key Pair in AWS
+- Terraform provisions `ECS`, `ECR`, `ALB`, networking, and `DocumentDB`
+- environment roots exist for `test`, `staging`, and `prod`
+- Terraform outputs expose ECS cluster, services, ECR repositories, and base task definitions
+- the deploy workflow builds images, pushes them to ECR, registers new task definition revisions, and updates ECS services
+
+The old EC2 + SSM deployment path is not the active deployment model for this branch anymore.
+
+## Prerequisites
+
+1. An AWS account with permissions for VPC, ALB, ECS, ECR, IAM, CloudWatch, and DocumentDB
+2. AWS CLI configured locally if you want to run Terraform manually
+3. Terraform `>= 1.7`
+4. GitHub repository secrets for workflow-based Terraform runs
+
+## Step 1: Pick The Environment
+
+Use one of the three environment roots:
+
+- `infrastructure/terraform/envs/test`
+- `infrastructure/terraform/envs/staging`
+- `infrastructure/terraform/envs/prod`
+
+Each environment keeps its own remote state key and its own variable file.
+
+## Step 2: Configure Terraform Variables
+
+Example for `test`:
 
 ```bash
-# Create key pair via AWS Console or CLI
-aws ec2 create-key-pair \
-    --key-name spendrax-key \
-    --query 'KeyMaterial' \
-    --output text > ~/.ssh/spendrax-key.pem
-
-chmod 600 ~/.ssh/spendrax-key.pem
-```
-
-### Step 2: Configure Terraform Variables
-
-```bash
-cd infrastructure/terraform/envs/prod
-
-# Copy example file
+cd infrastructure/terraform/envs/test
 cp terraform.tfvars.example terraform.tfvars
-
-# Edit with your values
 nano terraform.tfvars
 ```
 
-Required variables:
+The most important values to set are:
+
 ```hcl
-key_pair_name         = "spendrax-key"
-allowed_ssh_cidr      = "YOUR_IP/32"  # For your own SSH access only; GitHub Actions deploys through SSM
-documentdb_username   = "spendrax_admin"
-documentdb_password   = "YourSecurePassword123!"  # Min 8 characters
-jwt_secret_key        = "generate-a-strong-random-string"
-openai_api_key        = "sk-..."  # Optional
+aws_region         = "ap-south-1"
+project_name       = "spendrax"
+documentdb_username = "spendrax_admin"
+documentdb_password = "YourSecurePassword123!"
+jwt_secret_key      = "change-this-to-a-strong-secret"
+openai_api_key      = ""
 ```
 
-### Step 3: Prepare GitHub Actions Credentials
+For the very first Phase 1 apply, keep these values as-is unless you already have real images published:
+
+```hcl
+frontend_image_tag     = "bootstrap"
+backend_image_tag      = "bootstrap"
+frontend_desired_count = 0
+backend_desired_count  = 0
+```
+
+That will provision the infrastructure without trying to run application tasks before image publishing is in place.
+
+If you later have real ECR images ready, update these values to something like:
+
+```hcl
+frontend_image_tag     = "commit-sha-or-release-tag"
+backend_image_tag      = "commit-sha-or-release-tag"
+frontend_desired_count = 1
+backend_desired_count  = 1
+```
+
+## Step 3: Prepare GitHub Actions Credentials
 
 Create or choose an IAM user for GitHub Actions and attach the deploy policy from [infrastructure/terraform/IAM/README.md](/Users/gaurav.kumar/workspace/expense-tracker-app/infrastructure/terraform/IAM/README.md).
 
-You can manage that policy with Terraform from `infrastructure/terraform/IAM`, or create the IAM user manually and attach the generated policy there.
+You can manage that policy with Terraform from:
 
-### Step 4: Add GitHub Repository Secrets And Variables
+```text
+infrastructure/terraform/IAM
+```
 
-Add these GitHub Actions secrets for the Terraform and deployment workflows:
+## Step 4: Add GitHub Secrets And Variables
+
+For Terraform apply/destroy workflows, configure these repository or environment secrets:
 
 | Secret Name | Required | Description |
 |-------------|----------|-------------|
@@ -79,218 +139,234 @@ Add these GitHub Actions secrets for the Terraform and deployment workflows:
 | `TF_VAR_JWT_SECRET_KEY` | Yes | Terraform value for `jwt_secret_key` |
 | `TF_VAR_OPENAI_API_KEY` | No | Terraform value for `openai_api_key` |
 
-Add these GitHub Actions repository variables:
+Recommended repository or environment variables:
 
 | Variable Name | Required | Description |
 |---------------|----------|-------------|
 | `AWS_REGION` | Yes | AWS region, for example `ap-south-1` |
 | `TF_VAR_PROJECT_NAME` | No | Terraform value for `project_name`, default `spendrax` |
-| `TF_VAR_KEY_PAIR_NAME` | No | Terraform value for `key_pair_name`, default `spendrax-key` |
-| `TF_VAR_ALLOWED_SSH_CIDR` | No | Terraform value for `allowed_ssh_cidr`, default `0.0.0.0/0` |
-| `TF_VAR_INSTANCE_TYPE` | No | Terraform value for `instance_type`, default `t3.small` |
-| `TERRAFORM_ENV` | No | App deployment environment root override, default `test` on the `test` branch and `prod` on `main` |
 
-### Step 5: Trigger The Deployment Workflow
+For this branch, you do not need to configure the old EC2-specific deployment variables.
 
-Use the `Terraform Apply` workflow first when infrastructure must be created or updated. Choose `test`, `staging`, or `prod`, review the plan, then run it with `action=apply`.
+## Step 5: Bootstrap Or Confirm Remote State
 
-After infrastructure exists, the deployment workflow does this automatically on `test` and `main`:
+If your AWS account does not already have the Terraform state bucket and lock table, bootstrap them first.
 
-1. runs regression and integration tests
-2. runs a smoke test against real backend and frontend containers
-3. checks whether the selected Terraform environment already has deployment outputs available
-4. initializes Terraform only to read deployment outputs from state
-5. uploads a release bundle to S3
-6. deploys the bundle to EC2 through AWS Systems Manager (SSM)
-7. verifies application health after deployment
+You can do that either with the dedicated bootstrap stack or the helper script.
 
-If infrastructure has not been created yet for that environment, the deployment job is skipped with a summary telling you to run `Terraform Apply` first.
-
-You can trigger it in either of these ways:
+### Option A: Bootstrap Stack
 
 ```bash
-# Option 1: push to test or main
-git push origin test
-
-# Option 2: run from GitHub Actions -> "CI/CD Pipeline" -> "Run workflow"
+cd infrastructure/terraform/bootstrap
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform plan
+terraform apply
 ```
 
-The application deploy no longer depends on manually SSH-ing into EC2 or cloning the repo on the instance.
+### Option B: Helper Script
 
-### Step 6: Local Terraform Fallback (Optional)
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+./infrastructure/scripts/bootstrap-tf-backend.sh \
+  "spendrax-terraform-state-${ACCOUNT_ID}" \
+  "spendrax-terraform-locks" \
+  "ap-south-1"
+```
+
+## Step 6: Apply The Environment Infrastructure
+
+### Through GitHub Actions
+
+Use the `Terraform Apply` workflow and choose:
+
+- `environment`: `test`, `staging`, or `prod`
+- `action`: `apply`
+
+That is the recommended path for shared environments.
+
+### Locally
+
+Example for `test`:
 
 ```bash
 cd infrastructure/terraform/envs/test
-
-# Bootstrap backend state storage
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-../../../scripts/bootstrap-tf-backend.sh "spendrax-terraform-state-${ACCOUNT_ID}" "spendrax-terraform-locks" "ap-south-1"
-
-# Initialize Terraform against the remote backend
-terraform init \
-  -backend-config="bucket=spendrax-terraform-state-${ACCOUNT_ID}" \
-  -backend-config="key=test/terraform.tfstate" \
-  -backend-config="region=ap-south-1" \
-  -backend-config="encrypt=true" \
-  -backend-config="dynamodb_table=spendrax-terraform-locks"
-
-# Preview changes
+terraform init -backend-config=backend.hcl
 terraform plan
-
-# Apply (creates resources)
 terraform apply
-
-# Useful outputs:
-# - alb_dns_name: ALB URL to access the app
-# - deployment_artifacts_bucket: release bundle bucket
-# - instance_id: EC2 instance used by SSM deployment
 ```
 
-### Step 7: Access Your App
+## Step 7: Deploy The Application To ECS
 
-Access via ALB DNS (from terraform output):
+After the environment exists, use the `CI/CD Pipeline` workflow to deploy application images into ECS.
+
+For a manual deploy:
+
+- choose the branch to deploy from
+- set `deploy_application=true`
+- choose `target_environment` as `test`, `staging`, or `prod`
+- optionally set `skip_tests=true` only for emergencies
+
+What the workflow does:
+
+1. runs the existing test gates unless you explicitly skip them
+2. reads the Terraform outputs for the selected environment
+3. builds backend and frontend Docker images
+4. pushes those images to the environment ECR repositories
+5. registers new frontend and backend ECS task definition revisions
+6. updates the ECS services
+7. waits for ECS services to stabilize
+8. verifies ALB and backend health
+
+On the first deploy into a fresh environment, the workflow will automatically raise service desired counts from `0` to:
+
+- `1` for `test`
+- `1` for `staging`
+- `2` for `prod`
+
+Later deploys preserve the current desired counts instead of resetting them.
+
+## Step 8: Verify Outputs
+
+After apply, the most useful outputs are:
+
+- `app_url`
+- `alb_dns_name`
+- `ecs_cluster_name`
+- `frontend_service_name`
+- `backend_service_name`
+- `frontend_ecr_repository_url`
+- `backend_ecr_repository_url`
+- `documentdb_endpoint`
+
+Example:
+
+```bash
+cd infrastructure/terraform/envs/test
+terraform output
 ```
-http://<ALB_DNS_NAME>
-```
 
-Example: `http://spendrax-alb-123456789.ap-south-1.elb.amazonaws.com`
+## What To Expect After The First Apply
 
-### Step 8: Domain And SSL
+With the Terraform defaults in this branch:
 
-For the current setup, skip custom domain and SSL configuration.
+- the ALB will exist
+- the ECS cluster and services will exist
+- the ECR repositories will exist
+- DocumentDB will exist
+- the application itself will **not** be serving traffic yet until you run the deployment workflow
 
-Use the ALB URL over HTTP:
+That is because both services default to `desired_count = 0`.
 
-```text
-http://<ALB_DNS_NAME>
-```
+So if `app_url` exists but there is no real app response immediately after Terraform apply, that does not mean the infrastructure apply failed. It means the platform exists, but the ECS deployment workflow has not started live application tasks yet.
 
-The old `setup-ssl.sh` script is left in the repo as a legacy helper for a future custom-domain setup, but it is not part of the active deployment path.
+## How The ECS Deploy Workflow Activates The App
+
+The deploy workflow now does the runtime handoff:
+
+1. building frontend and backend Docker images
+2. pushing those images to ECR
+3. updating ECS task definitions with the new image tags
+4. setting desired counts above zero
+5. waiting for ECS service rollout and ALB health
+
+Terraform still owns the infrastructure shape, but the workflow owns live app image rollouts and service scale-up.
 
 ## Useful Commands
 
 ### Terraform
 
 ```bash
-# Use the matching environment root:
-cd infrastructure/terraform/envs/staging
+cd infrastructure/terraform/envs/test
 
-# Initialize with the environment backend
 terraform init -backend-config=backend.hcl
+terraform validate
+terraform plan
+terraform apply
+terraform output
+```
 
-# View current state
-terraform show
+Destroy example:
 
-# Destroy this environment (CAUTION!)
+```bash
 terraform plan -destroy -out=destroy.tfplan
 terraform apply destroy.tfplan
-
-# Update infrastructure
-terraform apply
 ```
 
-### Workflow Helpers
+### Inspect ECS And ECR Outputs
 
 ```bash
-# Bootstrap the Terraform backend bucket and lock table
-./infrastructure/scripts/bootstrap-tf-backend.sh <state-bucket> <lock-table> <aws-region>
-
-# Trigger an application deploy over SSM after uploading a release bundle
-./infrastructure/scripts/deploy.sh <instance-id> <artifact-bucket> <artifact-key> [release-id] [aws-region]
+terraform output ecs_cluster_name
+terraform output frontend_service_name
+terraform output backend_service_name
+terraform output frontend_ecr_repository_url
+terraform output backend_ecr_repository_url
 ```
 
-See `infrastructure/terraform/README.md` for the full environment/module layout and `infrastructure/DESTROY.md` for the recommended destroy workflow.
-
-### EC2 / Docker
+### Watch ECS Services
 
 ```bash
-# SSH into EC2
-ssh -i ~/.ssh/spendrax-key.pem ec2-user@<IP>
-
-# View logs
-docker compose -f docker-compose.prod.yml logs -f backend
-docker compose -f docker-compose.prod.yml logs -f frontend
-
-# Restart services
-docker compose -f docker-compose.prod.yml restart
-
-# Rebuild and deploy
-docker compose -f docker-compose.prod.yml up --build -d
-
-# Check resource usage
-docker stats
+aws ecs describe-services \
+  --cluster <ecs-cluster-name> \
+  --services <frontend-service-name> <backend-service-name> \
+  --region ap-south-1
 ```
 
-### Manual Deployment Through SSM
+### View ECS Task Logs
 
 ```bash
-# Upload a release bundle first, then trigger the host deploy script via SSM
-./infrastructure/scripts/deploy.sh <instance-id> <artifact-bucket> <artifact-key>
+aws logs tail /aws/ecs/<name-prefix>/frontend --follow --region ap-south-1
+aws logs tail /aws/ecs/<name-prefix>/backend --follow --region ap-south-1
 ```
 
-## Estimated Costs (ap-south-1 Mumbai)
+### Check DocumentDB Endpoint
 
-| Resource | Monthly Cost |
-|----------|-------------|
-| EC2 t3.small | ~$15 |
-| Application Load Balancer | ~$16-18 |
-| DocumentDB db.t3.medium | ~$56 |
-| Elastic IP | Free (if attached) |
-| Data Transfer (10GB) | ~$1 |
-| **Total** | **~$88-90/month** |
-
-**Note:** DocumentDB is more expensive than MongoDB Atlas free tier, but it's fully managed within your VPC with no external data transfer.
+```bash
+terraform output documentdb_endpoint
+```
 
 ## Troubleshooting
 
-### Application not accessible
+### The apply succeeded, but the app is not running
 
-```bash
-# Check security group allows port 80
-# Check Nginx is running
-sudo systemctl status nginx
+That is expected right after Terraform apply if:
 
-# Check Docker containers
-docker compose -f docker-compose.prod.yml ps
-```
+- `frontend_desired_count = 0`
+- `backend_desired_count = 0`
 
-### Database connection issues
+Terraform provisions infrastructure first. Run the deployment workflow to publish images and bring ECS tasks up.
 
-```bash
-# Check environment variables
-cat /opt/spendrax/backend/.env
+### ECS services exist but tasks do not start
 
-# Test MongoDB connection
-docker compose -f docker-compose.prod.yml exec backend python -c "from database import client; print(client.admin.command('ping'))"
-```
+Common causes once you enable desired counts or run the deployment workflow:
 
-### Out of disk space
+- image tag does not exist in ECR yet
+- frontend/backend image references are wrong
+- task definition env vars need adjustment
+- security groups or health checks need tuning
 
-```bash
-# Clean Docker
-docker system prune -a
+### ALB DNS exists but returns nothing useful
 
-# Check disk usage
-df -h
-```
+Also expected if no ECS tasks are running yet. The ALB can exist before the services are serving healthy containers.
+
+### DocumentDB is up but backend is not connected
+
+In this branch, backend runtime rollout is a later phase. DocumentDB can be healthy before the backend service is actually serving traffic.
 
 ## Security Checklist
 
-- [ ] Restrict SSH to your IP only (`allowed_ssh_cidr`)
-- [ ] Use strong JWT secret (32+ random characters)
-- [ ] Optional later: set up custom domain + SSL
-- [ ] Restrict MongoDB Atlas IP whitelist
-- [ ] Enable AWS CloudTrail for auditing
-- [ ] Set up AWS billing alerts
+- [ ] Use a strong `jwt_secret_key`
+- [ ] Keep `documentdb_password` out of committed files
+- [ ] Use GitHub protected environments for `staging` and `prod`
+- [ ] Restrict IAM permissions for the GitHub Actions deploy user
+- [ ] Enable billing alerts in AWS
+- [ ] Enable CloudTrail if you need audit coverage
 
-## Next Steps (Scaling Up)
+## Recommended Next Step
 
-When you outgrow EC2 + Docker Compose:
+Once `test` is deploying cleanly through ECS:
 
-1. **ECS Fargate** - Managed containers, auto-scaling
-2. **S3 + CloudFront** - Static frontend hosting
-3. **RDS/DocumentDB** - Managed database
-4. **ALB** - Load balancing, health checks
-5. **Route 53** - DNS management
-
-See `infrastructure/terraform-ecs/` (future) for ECS setup.
+- validate `staging` with the same workflow
+- tighten secrets handling with `Secrets Manager` or `SSM Parameter Store`
+- add autoscaling and service alarms
+- decide whether to keep manual Terraform apply/destroy only, or extend environment automation further

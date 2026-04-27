@@ -8,6 +8,11 @@ output "alb_dns_name" {
   value       = aws_lb.app.dns_name
 }
 
+output "alb_arn" {
+  description = "ALB ARN."
+  value       = aws_lb.app.arn
+}
+
 output "vpc_id" {
   description = "VPC ID."
   value       = aws_vpc.main.id
@@ -42,6 +47,16 @@ output "frontend_service_name" {
 output "backend_service_name" {
   description = "Backend ECS service name."
   value       = aws_ecs_service.backend.name
+}
+
+output "frontend_task_definition_arn" {
+  description = "Terraform-managed base task definition ARN for the frontend service."
+  value       = aws_ecs_task_definition.frontend.arn
+}
+
+output "backend_task_definition_arn" {
+  description = "Terraform-managed base task definition ARN for the backend service."
+  value       = aws_ecs_task_definition.backend.arn
 }
 
 output "frontend_ecr_repository_url" {
