@@ -32,6 +32,7 @@ from parsers import (
     detect_reversal_pairs,
     extract_payee_id,
     generate_transaction_hash,
+    validate_transactions,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,33 +135,44 @@ IMPORTANT:
 - Skip balance entries, account summaries, and non-transaction text
 - Amounts should always be positive numbers
 - Type should be "expense" or "income" based on money flow direction
+- Do not invent transactions. If a value is uncertain, skip that row.
+- Return valid JSON only.
 
 Bank Statement Text:
 {text_content}
 
-Respond with ONLY a JSON array of transactions. Example format:
-[
-  {{"date": "2024-03-15", "amount": 500.00, "description": "Swiggy Food Order", "category": "Food & Dining", "type": "expense"}},
-  {{"date": "2024-03-14", "amount": 200.00, "description": "Refund from Amazon", "category": "Income", "type": "income"}}
-]
+Respond with ONLY this JSON object shape:
+{{
+  "transactions": [
+    {{"date": "2024-03-15", "amount": 500.00, "description": "Swiggy Food Order", "category": "Food & Dining", "type": "expense"}},
+    {{"date": "2024-03-14", "amount": 200.00, "description": "Refund from Amazon", "category": "Income", "type": "income"}}
+  ]
+}}
 
-If no valid transactions found, respond with an empty array: []"""
+If no valid transactions found, respond with: {{"transactions": []}}"""
 
     try:
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4000,
-            temperature=0.3
+            temperature=0.1,
+            response_format={"type": "json_object"}
         )
         result_text = response.choices[0].message.content.strip()
 
-        # Extract JSON array from response
-        json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
-        if not json_match:
-            return []
+        # Parse strict JSON object when possible, with a fallback for older responses.
+        try:
+            payload = json.loads(result_text)
+            transactions = payload.get("transactions", [])
+        except json.JSONDecodeError:
+            json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
+            if not json_match:
+                return []
+            transactions = json.loads(json_match.group())
 
-        transactions = json.loads(json_match.group())
+        if not isinstance(transactions, list):
+            return []
 
         # Validate and clean transactions
         valid_transactions = []
@@ -208,6 +220,10 @@ If no valid transactions found, respond with an empty array: []"""
                 "type": txn_type,
                 "likely_credit": likely_credit
             })
+
+        validation = validate_transactions(valid_transactions, source="ai")
+        if validation.valid_count == 0 or validation.confidence == "low":
+            raise ValueError("AI extracted transactions with low confidence. Please review the PDF or try another format.")
 
         return valid_transactions
 
@@ -349,6 +365,23 @@ async def upload_statement(
     if not transactions:
         raise HTTPException(400, "No valid transactions found in file")
 
+    parse_source = f"{file_type}_{'ai' if used_ai else 'local'}"
+    parse_validation = validate_transactions(transactions, source=parse_source)
+    logger.info(
+        "Statement parse confidence: source=%s score=%s confidence=%s issues=%s",
+        parse_validation.source,
+        parse_validation.score,
+        parse_validation.confidence,
+        ",".join(parse_validation.issues) or "none",
+    )
+
+    if is_pdf and not used_ai and parse_validation.confidence == "low":
+        raise HTTPException(
+            400,
+            "Local PDF parsing produced a low-confidence result. "
+            "Try enabling AI extraction for better results."
+        )
+
     # Detect reversal pairs (same-day, same-amount debit-credit pairs)
     transactions = detect_reversal_pairs(transactions)
 
@@ -366,7 +399,10 @@ async def upload_statement(
         "duplicate_count": duplicate_count,
         "message": f"Found {len(transactions)} transactions" + (f" ({reversal_count} likely reversals)" if reversal_count else "") + (f" ({duplicate_count} duplicates)" if duplicate_count else ""),
         "used_ai": used_ai,
-        "file_type": file_type
+        "file_type": file_type,
+        "parse_confidence": parse_validation.confidence,
+        "parse_score": parse_validation.score,
+        "parse_issues": parse_validation.issues,
     }
 
 

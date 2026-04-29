@@ -20,6 +20,7 @@ from .utils import (
     extract_payee_id,
     generate_transaction_hash,
 )
+from .validation import validate_transactions, select_best_parse_attempt
 
 __all__ = [
     # Parsers
@@ -37,4 +38,6 @@ __all__ = [
     'parse_date_flexible',
     'extract_payee_id',
     'generate_transaction_hash',
+    'validate_transactions',
+    'select_best_parse_attempt',
 ]
