@@ -29,6 +29,7 @@ data "aws_iam_policy_document" "github_actions_deployer" {
       "elasticloadbalancing:*",
       "docdb:*",
       "rds:*",
+      "secretsmanager:*",
       "application-autoscaling:*",
       "cloudwatch:*",
       "logs:*",

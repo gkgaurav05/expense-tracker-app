@@ -93,8 +93,10 @@ aws_region         = "ap-south-1"
 project_name       = "spendrax"
 documentdb_username = "spendrax_admin"
 documentdb_password = "YourSecurePassword123!"
-jwt_secret_key      = "change-this-to-a-strong-secret"
-openai_api_key      = ""
+admin_emails        = "admin@example.com"
+smtp_host           = "smtp.gmail.com"
+smtp_port           = 587
+from_email          = ""
 ```
 
 For the very first Phase 1 apply, keep these values as-is unless you already have real images published:
@@ -135,9 +137,11 @@ For Terraform apply/destroy workflows, configure these repository or environment
 |-------------|----------|-------------|
 | `AWS_ACCESS_KEY_ID` | Yes | Access key for the GitHub Actions deploy user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret key for the GitHub Actions deploy user |
-| `TF_VAR_DOCUMENTDB_PASSWORD` | Yes | Terraform value for `documentdb_password` |
-| `TF_VAR_JWT_SECRET_KEY` | Yes | Terraform value for `jwt_secret_key` |
-| `TF_VAR_OPENAI_API_KEY` | No | Terraform value for `openai_api_key` |
+| `TF_VAR_DOCUMENTDB_PASSWORD` | Yes | Terraform value for `documentdb_password` used to provision the DocumentDB cluster |
+| `JWT_SECRET_KEY` | Yes (initial seed) | Runtime JWT secret synced into AWS Secrets Manager during deploy |
+| `OPENAI_API_KEY` | No | Runtime OpenAI API key synced into AWS Secrets Manager during deploy |
+| `SMTP_USER` | No | Runtime SMTP username synced into AWS Secrets Manager during deploy |
+| `SMTP_PASSWORD` | No | Runtime SMTP password synced into AWS Secrets Manager during deploy |
 
 Recommended repository or environment variables:
 
@@ -145,8 +149,24 @@ Recommended repository or environment variables:
 |---------------|----------|-------------|
 | `AWS_REGION` | Yes | AWS region, for example `ap-south-1` |
 | `TF_VAR_PROJECT_NAME` | No | Terraform value for `project_name`, default `spendrax` |
+| `ADMIN_EMAILS` | No | Comma-separated admin email list passed to the backend task definition |
+| `SMTP_HOST` | No | SMTP host exposed as a normal backend environment variable |
+| `SMTP_PORT` | No | SMTP port exposed as a normal backend environment variable |
+| `FROM_EMAIL` | No | Optional sender address exposed as a normal backend environment variable |
 
 For this branch, you do not need to configure the old EC2-specific deployment variables.
+
+### How runtime secrets work now
+
+- Terraform creates the `Secrets Manager` entry and wires the backend ECS task definition to read:
+  - `MONGO_URL`
+  - `JWT_SECRET_KEY`
+  - `OPENAI_API_KEY`
+  - `SMTP_USER`
+  - `SMTP_PASSWORD`
+- The actual secret values are **not committed** and are **not stored in Terraform state**
+- During the deploy workflow, GitHub Actions updates the secret value in AWS from the configured GitHub secrets, and then rolls the ECS services forward
+- If a value is already present in `Secrets Manager` and GitHub does not provide a newer one, the deploy workflow preserves the existing AWS value
 
 ## Step 5: Bootstrap Or Confirm Remote State
 
@@ -355,8 +375,9 @@ In this branch, backend runtime rollout is a later phase. DocumentDB can be heal
 
 ## Security Checklist
 
-- [ ] Use a strong `jwt_secret_key`
+- [ ] Use a strong `JWT_SECRET_KEY`
 - [ ] Keep `documentdb_password` out of committed files
+- [ ] Keep SMTP credentials in `AWS Secrets Manager`, not in git
 - [ ] Use GitHub protected environments for `staging` and `prod`
 - [ ] Restrict IAM permissions for the GitHub Actions deploy user
 - [ ] Enable billing alerts in AWS
@@ -367,6 +388,5 @@ In this branch, backend runtime rollout is a later phase. DocumentDB can be heal
 Once `test` is deploying cleanly through ECS:
 
 - validate `staging` with the same workflow
-- tighten secrets handling with `Secrets Manager` or `SSM Parameter Store`
 - add autoscaling and service alarms
 - decide whether to keep manual Terraform apply/destroy only, or extend environment automation further

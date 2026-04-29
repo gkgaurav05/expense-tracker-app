@@ -45,8 +45,10 @@ module "app" {
   documentdb_parameter_group_family  = var.documentdb_parameter_group_family
   documentdb_backup_retention_period = var.documentdb_backup_retention_period
   documentdb_skip_final_snapshot     = var.documentdb_skip_final_snapshot
-  jwt_secret_key                     = var.jwt_secret_key
-  openai_api_key                     = var.openai_api_key
+  admin_emails                       = var.admin_emails
+  smtp_host                          = var.smtp_host
+  smtp_port                          = var.smtp_port
+  from_email                         = var.from_email
   frontend_image_tag                 = var.frontend_image_tag
   backend_image_tag                  = var.backend_image_tag
   frontend_desired_count             = var.frontend_desired_count
@@ -85,6 +87,16 @@ output "documentdb_endpoint" {
   value       = module.app.documentdb_endpoint
 }
 
+output "documentdb_username" {
+  description = "DocumentDB master username."
+  value       = module.app.documentdb_username
+}
+
+output "database_name" {
+  description = "Application database name."
+  value       = module.app.database_name
+}
+
 output "ecs_cluster_name" {
   description = "ECS cluster name."
   value       = module.app.ecs_cluster_name
@@ -118,4 +130,9 @@ output "frontend_ecr_repository_url" {
 output "backend_ecr_repository_url" {
   description = "Backend ECR repository URL."
   value       = module.app.backend_ecr_repository_url
+}
+
+output "backend_runtime_secret_arn" {
+  description = "Secrets Manager ARN for backend runtime secrets."
+  value       = module.app.backend_runtime_secret_arn
 }

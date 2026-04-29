@@ -87,12 +87,17 @@ Two manual workflows are included:
 - `Terraform Apply`: plan or apply `test`, `staging`, or `prod`
 - `Terraform Destroy`: destroy `test`, `staging`, or `prod` with typed confirmation
 
-Required repository or environment secrets:
+Required repository or environment secrets for `Terraform Apply` / `Terraform Destroy`:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 - `DOCUMENTDB_PASSWORD`
+
+Additional repository or environment secrets for the `CI/CD Pipeline` deploy workflow:
+
 - `JWT_SECRET_KEY`
+- `SMTP_USER` optional
+- `SMTP_PASSWORD` optional
 - `OPENAI_API_KEY` optional
 
 Recommended repository or environment variable:

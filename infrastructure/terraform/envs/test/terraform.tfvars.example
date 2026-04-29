@@ -14,8 +14,12 @@ documentdb_instance_class          = "db.t3.medium"
 documentdb_backup_retention_period = 1
 documentdb_skip_final_snapshot     = true
 
-jwt_secret_key = "your-super-secret-jwt-key-change-this"
-openai_api_key = ""
+# Runtime secret values such as SMTP credentials, JWT, and OpenAI API key are
+# seeded into AWS Secrets Manager during deploy. Do not commit them here.
+admin_emails = "admin@example.com"
+smtp_host    = "smtp.gmail.com"
+smtp_port    = 587
+from_email   = ""
 
 frontend_image_tag     = "bootstrap"
 backend_image_tag      = "bootstrap"

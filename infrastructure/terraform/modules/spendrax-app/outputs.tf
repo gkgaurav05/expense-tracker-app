@@ -23,6 +23,11 @@ output "documentdb_endpoint" {
   value       = aws_docdb_cluster.main.endpoint
 }
 
+output "documentdb_username" {
+  description = "DocumentDB master username."
+  value       = var.documentdb_username
+}
+
 output "documentdb_port" {
   description = "DocumentDB port."
   value       = aws_docdb_cluster.main.port
@@ -32,6 +37,11 @@ output "documentdb_connection_string" {
   description = "DocumentDB connection string without password."
   value       = "mongodb://${var.documentdb_username}:<password>@${aws_docdb_cluster.main.endpoint}:${aws_docdb_cluster.main.port}/${local.database_name}?retryWrites=false"
   sensitive   = true
+}
+
+output "database_name" {
+  description = "Application database name used by the backend."
+  value       = local.database_name
 }
 
 output "ecs_cluster_name" {
@@ -67,6 +77,11 @@ output "frontend_ecr_repository_url" {
 output "backend_ecr_repository_url" {
   description = "ECR repository URL for the backend image."
   value       = aws_ecr_repository.backend.repository_url
+}
+
+output "backend_runtime_secret_arn" {
+  description = "Secrets Manager ARN for backend runtime secrets consumed by ECS."
+  value       = aws_secretsmanager_secret.backend_runtime.arn
 }
 
 output "frontend_target_group_arn" {

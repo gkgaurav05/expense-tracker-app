@@ -106,21 +106,27 @@ variable "documentdb_skip_final_snapshot" {
   default     = true
 }
 
-variable "jwt_secret_key" {
-  description = "JWT secret key for authentication."
+variable "admin_emails" {
+  description = "Comma-separated list of admin email addresses for backend role assignment."
   type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(var.jwt_secret_key) >= 16
-    error_message = "jwt_secret_key must be at least 16 characters long."
-  }
+  default     = ""
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API key for AI insights."
+variable "smtp_host" {
+  description = "SMTP host exposed to the backend container as a normal environment variable."
   type        = string
-  sensitive   = true
+  default     = "smtp.gmail.com"
+}
+
+variable "smtp_port" {
+  description = "SMTP port exposed to the backend container as a normal environment variable."
+  type        = number
+  default     = 587
+}
+
+variable "from_email" {
+  description = "Optional sender email address exposed to the backend container."
+  type        = string
   default     = ""
 }
 

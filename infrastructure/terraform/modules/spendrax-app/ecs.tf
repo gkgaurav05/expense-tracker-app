@@ -136,12 +136,20 @@ resource "aws_ecs_task_definition" "backend" {
         }
       ]
       environment = [
-        { name = "MONGO_URL", value = local.mongo_url },
         { name = "DB_NAME", value = local.database_name },
         { name = "CORS_ORIGINS", value = "*" },
-        { name = "JWT_SECRET_KEY", value = var.jwt_secret_key },
-        { name = "OPENAI_API_KEY", value = var.openai_api_key },
-        { name = "ADMIN_EMAILS", value = "" }
+        { name = "ADMIN_EMAILS", value = var.admin_emails },
+        { name = "APP_URL", value = "http://${aws_lb.app.dns_name}" },
+        { name = "SMTP_HOST", value = var.smtp_host },
+        { name = "SMTP_PORT", value = tostring(var.smtp_port) },
+        { name = "FROM_EMAIL", value = var.from_email }
+      ]
+      secrets = [
+        { name = "MONGO_URL", valueFrom = "${aws_secretsmanager_secret.backend_runtime.arn}:MONGO_URL::" },
+        { name = "JWT_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.backend_runtime.arn}:JWT_SECRET_KEY::" },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.backend_runtime.arn}:OPENAI_API_KEY::" },
+        { name = "SMTP_USER", valueFrom = "${aws_secretsmanager_secret.backend_runtime.arn}:SMTP_USER::" },
+        { name = "SMTP_PASSWORD", valueFrom = "${aws_secretsmanager_secret.backend_runtime.arn}:SMTP_PASSWORD::" }
       ]
       logConfiguration = {
         logDriver = "awslogs"

@@ -5,7 +5,9 @@ This folder manages the IAM policy needed by GitHub Actions to:
 - bootstrap the Terraform remote state bucket and DynamoDB lock table
 - apply the main Terraform stack
 - create and manage the ECS, ECR, ALB, networking, logging, and DocumentDB resources in the app stack
+- create and manage the AWS Secrets Manager resources used by the backend ECS task
 - build and push frontend and backend images to ECR
+- sync backend runtime secret values into Secrets Manager during deploy
 - register ECS task definition revisions
 - update ECS services and wait for ECS rollouts during application deployment
 

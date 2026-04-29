@@ -470,9 +470,17 @@ jobs:
           FRONTEND_ECR_REPOSITORY_STATUS=$?
           BACKEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_ecr_repository_url 2>/tmp/terraform-backend-ecr.err)
           BACKEND_ECR_REPOSITORY_STATUS=$?
+          BACKEND_RUNTIME_SECRET_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_runtime_secret_arn 2>/tmp/terraform-backend-runtime-secret.err)
+          BACKEND_RUNTIME_SECRET_STATUS=$?
+          DOCUMENTDB_ENDPOINT=$(terraform -chdir="${TF_WORKING_DIR}" output -raw documentdb_endpoint 2>/tmp/terraform-documentdb-endpoint.err)
+          DOCUMENTDB_ENDPOINT_STATUS=$?
+          DOCUMENTDB_USERNAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw documentdb_username 2>/tmp/terraform-documentdb-username.err)
+          DOCUMENTDB_USERNAME_STATUS=$?
+          DATABASE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw database_name 2>/tmp/terraform-database-name.err)
+          DATABASE_NAME_STATUS=$?
           set -e
 
-          if [ "${APP_URL_STATUS}" -ne 0 ] || [ "${ECS_CLUSTER_STATUS}" -ne 0 ] || [ "${FRONTEND_SERVICE_STATUS}" -ne 0 ] || [ "${BACKEND_SERVICE_STATUS}" -ne 0 ] || [ "${FRONTEND_TASK_DEFINITION_STATUS}" -ne 0 ] || [ "${BACKEND_TASK_DEFINITION_STATUS}" -ne 0 ] || [ "${FRONTEND_ECR_REPOSITORY_STATUS}" -ne 0 ] || [ "${BACKEND_ECR_REPOSITORY_STATUS}" -ne 0 ] || [ -z "${APP_URL}" ] || [ -z "${ECS_CLUSTER_NAME}" ] || [ -z "${FRONTEND_SERVICE_NAME}" ] || [ -z "${BACKEND_SERVICE_NAME}" ] || [ -z "${FRONTEND_TASK_DEFINITION_ARN}" ] || [ -z "${BACKEND_TASK_DEFINITION_ARN}" ] || [ -z "${FRONTEND_ECR_REPOSITORY_URL}" ] || [ -z "${BACKEND_ECR_REPOSITORY_URL}" ]; then
+          if [ "${APP_URL_STATUS}" -ne 0 ] || [ "${ECS_CLUSTER_STATUS}" -ne 0 ] || [ "${FRONTEND_SERVICE_STATUS}" -ne 0 ] || [ "${BACKEND_SERVICE_STATUS}" -ne 0 ] || [ "${FRONTEND_TASK_DEFINITION_STATUS}" -ne 0 ] || [ "${BACKEND_TASK_DEFINITION_STATUS}" -ne 0 ] || [ "${FRONTEND_ECR_REPOSITORY_STATUS}" -ne 0 ] || [ "${BACKEND_ECR_REPOSITORY_STATUS}" -ne 0 ] || [ "${BACKEND_RUNTIME_SECRET_STATUS}" -ne 0 ] || [ "${DOCUMENTDB_ENDPOINT_STATUS}" -ne 0 ] || [ "${DOCUMENTDB_USERNAME_STATUS}" -ne 0 ] || [ "${DATABASE_NAME_STATUS}" -ne 0 ] || [ -z "${APP_URL}" ] || [ -z "${ECS_CLUSTER_NAME}" ] || [ -z "${FRONTEND_SERVICE_NAME}" ] || [ -z "${BACKEND_SERVICE_NAME}" ] || [ -z "${FRONTEND_TASK_DEFINITION_ARN}" ] || [ -z "${BACKEND_TASK_DEFINITION_ARN}" ] || [ -z "${FRONTEND_ECR_REPOSITORY_URL}" ] || [ -z "${BACKEND_ECR_REPOSITORY_URL}" ] || [ -z "${BACKEND_RUNTIME_SECRET_ARN}" ] || [ -z "${DOCUMENTDB_ENDPOINT}" ] || [ -z "${DOCUMENTDB_USERNAME}" ] || [ -z "${DATABASE_NAME}" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "## Deployment skipped" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -560,6 +568,10 @@ jobs:
           BACKEND_TASK_DEFINITION_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_task_definition_arn)
           FRONTEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw frontend_ecr_repository_url)
           BACKEND_ECR_REPOSITORY_URL=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_ecr_repository_url)
+          BACKEND_RUNTIME_SECRET_ARN=$(terraform -chdir="${TF_WORKING_DIR}" output -raw backend_runtime_secret_arn)
+          DOCUMENTDB_ENDPOINT=$(terraform -chdir="${TF_WORKING_DIR}" output -raw documentdb_endpoint)
+          DOCUMENTDB_USERNAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw documentdb_username)
+          DATABASE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw database_name)
 
           echo "APP_URL=${APP_URL}" >> "$GITHUB_ENV"
           echo "ECS_CLUSTER_NAME=${ECS_CLUSTER_NAME}" >> "$GITHUB_ENV"
@@ -569,6 +581,10 @@ jobs:
           echo "BACKEND_TASK_DEFINITION_ARN=${BACKEND_TASK_DEFINITION_ARN}" >> "$GITHUB_ENV"
           echo "FRONTEND_ECR_REPOSITORY_URL=${FRONTEND_ECR_REPOSITORY_URL}" >> "$GITHUB_ENV"
           echo "BACKEND_ECR_REPOSITORY_URL=${BACKEND_ECR_REPOSITORY_URL}" >> "$GITHUB_ENV"
+          echo "BACKEND_RUNTIME_SECRET_ARN=${BACKEND_RUNTIME_SECRET_ARN}" >> "$GITHUB_ENV"
+          echo "DOCUMENTDB_ENDPOINT=${DOCUMENTDB_ENDPOINT}" >> "$GITHUB_ENV"
+          echo "DOCUMENTDB_USERNAME=${DOCUMENTDB_USERNAME}" >> "$GITHUB_ENV"
+          echo "DATABASE_NAME=${DATABASE_NAME}" >> "$GITHUB_ENV"
 
       - name: Prepare release metadata
         run: |
@@ -596,6 +612,93 @@ jobs:
 
       - name: Push frontend image to ECR
         run: docker push "${FRONTEND_ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+
+      - name: Sync backend runtime secret
+        env:
+          DOCUMENTDB_PASSWORD_INPUT: ${{ secrets.TF_VAR_DOCUMENTDB_PASSWORD || secrets.DOCUMENTDB_PASSWORD }}
+          JWT_SECRET_KEY_INPUT: ${{ secrets.TF_VAR_JWT_SECRET_KEY || secrets.JWT_SECRET_KEY }}
+          OPENAI_API_KEY_INPUT: ${{ secrets.TF_VAR_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+          SMTP_USER_INPUT: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD_INPUT: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          EXISTING_SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "${BACKEND_RUNTIME_SECRET_ARN}" \
+            --region "${AWS_REGION}" \
+            --query 'SecretString' \
+            --output text 2>/dev/null || echo '{}')
+
+          if [ -z "${EXISTING_SECRET_JSON}" ] || [ "${EXISTING_SECRET_JSON}" = "None" ]; then
+            EXISTING_SECRET_JSON='{}'
+          fi
+
+          existing_secret_value() {
+            jq -r --arg key "$1" '.[$key] // empty' <<<"${EXISTING_SECRET_JSON}"
+          }
+
+          EXISTING_MONGO_URL=$(existing_secret_value "MONGO_URL")
+          EXISTING_JWT_SECRET_KEY=$(existing_secret_value "JWT_SECRET_KEY")
+          EXISTING_OPENAI_API_KEY=$(existing_secret_value "OPENAI_API_KEY")
+          EXISTING_SMTP_USER=$(existing_secret_value "SMTP_USER")
+          EXISTING_SMTP_PASSWORD=$(existing_secret_value "SMTP_PASSWORD")
+
+          if [ -n "${DOCUMENTDB_PASSWORD_INPUT}" ]; then
+            MONGO_URL="mongodb://${DOCUMENTDB_USERNAME}:${DOCUMENTDB_PASSWORD_INPUT}@${DOCUMENTDB_ENDPOINT}:27017/${DATABASE_NAME}?tls=false&retryWrites=false&directConnection=true"
+          else
+            MONGO_URL="${EXISTING_MONGO_URL}"
+          fi
+
+          if [ -n "${JWT_SECRET_KEY_INPUT}" ]; then
+            JWT_SECRET_KEY_VALUE="${JWT_SECRET_KEY_INPUT}"
+          else
+            JWT_SECRET_KEY_VALUE="${EXISTING_JWT_SECRET_KEY}"
+          fi
+
+          if [ -n "${OPENAI_API_KEY_INPUT}" ]; then
+            OPENAI_API_KEY_VALUE="${OPENAI_API_KEY_INPUT}"
+          else
+            OPENAI_API_KEY_VALUE="${EXISTING_OPENAI_API_KEY}"
+          fi
+
+          if [ -n "${SMTP_USER_INPUT}" ]; then
+            SMTP_USER_VALUE="${SMTP_USER_INPUT}"
+          else
+            SMTP_USER_VALUE="${EXISTING_SMTP_USER}"
+          fi
+
+          if [ -n "${SMTP_PASSWORD_INPUT}" ]; then
+            SMTP_PASSWORD_VALUE="${SMTP_PASSWORD_INPUT}"
+          else
+            SMTP_PASSWORD_VALUE="${EXISTING_SMTP_PASSWORD}"
+          fi
+
+          if [ -z "${MONGO_URL}" ]; then
+            echo "DocumentDB runtime secret is missing. Provide DOCUMENTDB_PASSWORD in GitHub secrets once, or seed MONGO_URL in Secrets Manager."
+            exit 1
+          fi
+
+          if [ -z "${JWT_SECRET_KEY_VALUE}" ]; then
+            echo "JWT runtime secret is missing. Provide JWT_SECRET_KEY in GitHub secrets once, or seed it directly in Secrets Manager."
+            exit 1
+          fi
+
+          SECRET_STRING=$(jq -n \
+            --arg mongo_url "${MONGO_URL}" \
+            --arg jwt_secret_key "${JWT_SECRET_KEY_VALUE}" \
+            --arg openai_api_key "${OPENAI_API_KEY_VALUE}" \
+            --arg smtp_user "${SMTP_USER_VALUE}" \
+            --arg smtp_password "${SMTP_PASSWORD_VALUE}" \
+            '{
+              MONGO_URL: $mongo_url,
+              JWT_SECRET_KEY: $jwt_secret_key,
+              OPENAI_API_KEY: $openai_api_key,
+              SMTP_USER: $smtp_user,
+              SMTP_PASSWORD: $smtp_password
+            }')
+
+          aws secretsmanager put-secret-value \
+            --secret-id "${BACKEND_RUNTIME_SECRET_ARN}" \
+            --secret-string "${SECRET_STRING}" \
+            --region "${AWS_REGION}" >/dev/null
 
       - name: Resolve desired ECS service counts
         run: |
