@@ -70,7 +70,7 @@ describe('UploadStatementModal regressions', () => {
 
     await changeFileInput(
       container.querySelector('input[type="file"]'),
-      new File(['date,amount'], 'statement.csv', { type: 'text/csv' })
+      new File(['fake-pdf'], 'statement.pdf', { type: 'application/pdf' })
     );
     await advanceProcessingTimers();
     await flushPromises(6);
@@ -86,6 +86,32 @@ describe('UploadStatementModal regressions', () => {
     ]);
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(toastMock.success).toHaveBeenCalledWith('Imported 1 transactions');
+  });
+
+  it('rejects CSV and HTML statement uploads before calling the API', async () => {
+    const { container } = await renderComponent(
+      <UploadStatementModal
+        open
+        onOpenChange={jest.fn()}
+        categories={[{ name: 'Food & Dining' }]}
+        onSuccess={jest.fn()}
+      />
+    );
+
+    await changeFileInput(
+      container.querySelector('input[type="file"]'),
+      new File(['date,amount'], 'statement.csv', { type: 'text/csv' })
+    );
+
+    expect(toastMock.error).toHaveBeenCalledWith('Only PDF bank statement files are supported');
+
+    await changeFileInput(
+      container.querySelector('input[type="file"]'),
+      new File(['<html></html>'], 'statement.html', { type: 'text/html' })
+    );
+
+    expect(toastMock.error).toHaveBeenCalledWith('Only PDF bank statement files are supported');
+    expect(apiMock.uploadStatement).not.toHaveBeenCalled();
   });
 
   it('shows the AI fallback step when local PDF parsing fails', async () => {

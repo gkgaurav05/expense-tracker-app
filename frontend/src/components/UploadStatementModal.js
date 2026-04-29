@@ -51,9 +51,6 @@ function ProcessingProgress({ currentStep, fileName, isPdf, elapsedTime, useAI =
       {/* Steps */}
       <div className="space-y-3 max-w-sm mx-auto">
         {visibleSteps.map((step, idx) => {
-          // For CSV, skip PDF-specific steps
-          if (!isPdf && step.id === 'extract') return null;
-
           const isCompleted = idx < stepIndex;
           const isCurrent = idx === stepIndex;
           const isPending = idx > stepIndex;
@@ -107,14 +104,10 @@ function ProcessingProgress({ currentStep, fileName, isPdf, elapsedTime, useAI =
 
       {/* Time estimate */}
       <div className="text-center">
-        {isPdf ? (
-          <p className="text-xs text-[#A1A1AA] flex items-center justify-center gap-2">
-            <Sparkles size={12} className="text-[#FDE047]" />
-            AI extraction usually takes 15-45 seconds
-          </p>
-        ) : (
-          <p className="text-xs text-[#A1A1AA]">CSV processing is quick, almost done...</p>
-        )}
+        <p className="text-xs text-[#A1A1AA] flex items-center justify-center gap-2">
+          <Sparkles size={12} className="text-[#FDE047]" />
+          PDF extraction usually takes a few seconds. AI fallback can take 15-45 seconds.
+        </p>
         {elapsedTime > 30 && isPdf && (
           <motion.p
             initial={{ opacity: 0 }}
@@ -138,7 +131,6 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
   const [useAI, setUseAI] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [fileType, setFileType] = useState(null);
   const [pdfConsent, setPdfConsent] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState(new Set());
   const [bulkCategory, setBulkCategory] = useState('');
@@ -160,7 +152,6 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
     setStep('upload');
     setUseAI(false);
     setAiLoading(false);
-    setFileType(null);
     setPdfConsent(false);
     setSelectedIndices(new Set());
     setBulkCategory('');
@@ -214,19 +205,15 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
 
   const handleFile = async (selectedFile) => {
     const fileName = selectedFile.name.toLowerCase();
-    const isCSV = fileName.endsWith('.csv');
     const isPDF = fileName.endsWith('.pdf');
-    const isHTML = fileName.endsWith('.html') || fileName.endsWith('.htm');
 
-    if (!isCSV && !isPDF && !isHTML) {
-      toast.error('Only CSV, PDF, and HTML files are supported');
+    if (!isPDF) {
+      toast.error('Only PDF bank statement files are supported');
       return;
     }
 
     setFile(selectedFile);
-    setFileType(isPDF ? 'pdf' : isHTML ? 'html' : 'csv');
-
-    // All formats now processed locally first - no consent needed
+    // PDFs are processed locally first; AI is offered only when local parsing needs help.
     await processFile(selectedFile, false);
   };
 
@@ -302,7 +289,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
         timerRef.current = null;
       }
 
-      const errorMsg = err.response?.data?.detail || 'Failed to parse file';
+      const errorMsg = err.response?.data?.detail || 'Failed to parse PDF statement';
 
       // If PDF is password-protected, show password input
       if (isPdf && errorMsg.toLowerCase().includes('password')) {
@@ -575,7 +562,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
         <DialogHeader>
           <DialogTitle className="text-xl font-bold font-['General_Sans'] flex items-center gap-2">
             <FileSpreadsheet size={22} className="text-[#FDE047]" />
-            {step === 'upload' ? 'Upload Bank Statement' :
+            {step === 'upload' ? 'Upload PDF Statement' :
              step === 'password-required' ? 'Password Required' :
              step === 'consent' ? 'PDF Consent Required' : 'Review Transactions'}
           </DialogTitle>
@@ -596,20 +583,20 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.pdf,.html,.htm"
+                accept=".pdf,application/pdf"
                 onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
                 className="hidden"
               />
               {uploading ? (
                 <div className="flex flex-col items-center gap-3">
                   <Loader2 size={40} className="text-[#FDE047] animate-spin" />
-                  <p className="text-[#A1A1AA]">Parsing file...</p>
+                  <p className="text-[#A1A1AA]">Parsing PDF statement...</p>
                 </div>
               ) : (
                 <>
                   <Upload size={40} className={`mx-auto mb-4 ${dragActive ? 'text-[#FDE047]' : 'text-[#A1A1AA]'}`} />
                   <p className="text-white font-semibold mb-1">
-                    {dragActive ? 'Drop file here' : 'Drag & drop your CSV, PDF, or HTML file'}
+                    {dragActive ? 'Drop PDF here' : 'Drag & drop your PDF bank statement'}
                   </p>
                   <p className="text-sm text-[#A1A1AA]">or click to browse</p>
                 </>
@@ -617,13 +604,11 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
             </div>
 
             <div className="glass-card-sm">
-              <p className="text-xs uppercase tracking-[0.15em] font-semibold text-[#A1A1AA] mb-2">Supported Formats (All Processed Locally)</p>
+              <p className="text-xs uppercase tracking-[0.15em] font-semibold text-[#A1A1AA] mb-2">Supported Format</p>
               <ul className="text-sm text-[#A1A1AA] space-y-1">
-                <li className="flex items-center gap-2"><Check size={14} className="text-green-400" /> CSV - Bank exports</li>
-                <li className="flex items-center gap-2"><Check size={14} className="text-green-400" /> HTML - GPay, PhonePe exports</li>
-                <li className="flex items-center gap-2"><Check size={14} className="text-green-400" /> PDF - Bank statements</li>
+                <li className="flex items-center gap-2"><Check size={14} className="text-green-400" /> PDF - Bank and UPI statements</li>
               </ul>
-              <p className="text-[10px] text-[#A1A1AA]/70 mt-2">100% private - no data sent externally. AI fallback available if needed.</p>
+              <p className="text-[10px] text-[#A1A1AA]/70 mt-2">Processed locally first. AI fallback is available only with your consent if needed.</p>
             </div>
           </div>
         )}
@@ -632,7 +617,7 @@ export default function UploadStatementModal({ open, onOpenChange, categories, o
           <ProcessingProgress
             currentStep={processingStep}
             fileName={file?.name}
-            isPdf={fileType === 'pdf'}
+            isPdf
             elapsedTime={elapsedTime}
             useAI={processingWithAI}
           />
