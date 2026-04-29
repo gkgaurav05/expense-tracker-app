@@ -8,18 +8,21 @@ A modern, full-stack expense tracking application built for students and profess
 
 ## Features
 
-- **Bank Statement Import** -- Upload bank statements (CSV, PDF, HTML) to bulk import transactions
+- **Bank Statement Import** -- Upload PDF bank statements to bulk import transactions
   - **Local parsing** -- All files processed locally, no data sent externally
   - **Multi-page PDF support** -- Extracts transactions across all pages with column structure preservation
   - **GPay/PhonePe support** -- Handles UPI statement PDFs with garbled text extraction
   - **Traditional bank PDFs** -- Axis, HDFC, SBI, etc. with proper Withdrawal/Deposit column detection
+  - **Packed-row PDF support** -- Handles HDFC-style rows where multiple transaction fields are packed into one cell
+  - **Validation-driven parser selection** -- Scores parser results and chooses the best local extraction by confidence
+  - **Local OCR fallback** -- Uses PyMuPDF and Tesseract for scanned PDFs when normal text/table extraction is too sparse
   - **Password-protected PDFs** -- Enter password to decrypt encrypted bank statements
   - **Duplicate detection** -- Hash-based detection prevents re-importing same transactions; shown at preview stage
   - **Reversal detection** -- Auto-detects same-day matching debit/credit pairs (cancelled/reversed transactions)
   - **Auto-categorization** -- Keyword matching against 10 categories with 300+ merchant patterns
   - **Income detection** -- Automatically identifies credits/deposits as income
   - **Payee learning** -- Remembers your category choices for recurring payees
-  - **AI fallback** -- Optional OpenAI extraction when local parsing fails (with consent)
+  - **AI fallback** -- Optional structured OpenAI extraction when local parsing is low-confidence or fails (with consent)
 - **Expense Management** -- Add, edit, delete expenses with category, description, and date picker (future dates blocked). Month navigator to browse expenses by month with inline summary stats (total spent, count). Category filter works within the selected month.
 - **Smart Categories** -- 10 pre-built categories (Food & Dining, Groceries, Transport, Travel, Shopping, Entertainment, Subscriptions, Health, Education, Bills & Utilities) + custom categories
 - **Month-wise Budget Tracking** -- Set budgets per category per month with visual progress bars, month navigation, and month summary card showing total budget/spent/remaining with days tracker for current month
@@ -43,6 +46,7 @@ A modern, full-stack expense tracking application built for students and profess
 | Database   | MongoDB 7                                                         |
 | Auth       | JWT (python-jose), bcrypt password hashing, OAuth2PasswordBearer  |
 | AI         | OpenAI GPT-4o-mini                                                |
+| OCR        | PyMuPDF, pytesseract, Tesseract                                   |
 | Deployment | Docker, Docker Compose, Nginx (production reverse proxy)          |
 
 ---
@@ -161,7 +165,7 @@ docker compose -f docker-compose.test.yml up --build --abort-on-container-exit -
 docker compose -f docker-compose.test.yml down -v
 ```
 
-Runs against a real MongoDB container using FastAPI's `TestClient`. Covers: auth (register, login, forgot/reset password, wrong password, invalid tokens), expenses (CRUD, filters, ownership, future date validation), bulk import (duplicates, future dates, income), budgets (CRUD, month scoping, user isolation), categories (CRUD, duplicates, default protection), statement upload (CSV, PDF, HTML, AI fallback, password-protected), payee mappings (user-scoped), dashboard (monthly, weekly, income exclusion), alerts and reports (income exclusion, category/date filters, CSV export), savings (budget vs spent breakdown, user scoping), insights (OpenAI mock, no-data handling, invalid month), admin (role-based access, stats, activity).
+Runs against a real MongoDB container using FastAPI's `TestClient`. Covers: auth (register, login, forgot/reset password, wrong password, invalid tokens), expenses (CRUD, filters, ownership, future date validation), bulk import (duplicates, future dates, income), budgets (CRUD, month scoping, user isolation), categories (CRUD, duplicates, default protection), PDF statement upload (AI fallback, password-protected, unsupported file rejection), payee mappings (user-scoped), dashboard (monthly, weekly, income exclusion), alerts and reports (income exclusion, category/date filters, CSV export), savings (budget vs spent breakdown, user scoping), insights (OpenAI mock, no-data handling, invalid month), admin (role-based access, stats, activity).
 
 Report: `reports/backend-report.xml`
 
@@ -194,6 +198,8 @@ docker compose down -v
 | `OPENAI_API_KEY`   | No       | OpenAI API key for AI-powered insights         |
 | `JWT_SECRET_KEY`   | Yes      | Secret key for JWT token signing               |
 | `ADMIN_EMAILS`     | No       | Comma-separated admin emails (auto-promoted on startup) |
+| `OCR_MAX_PAGES`    | No       | Max pages to OCR for scanned PDFs (default: `5`, clamped 1-20) |
+| `OCR_DPI`          | No       | Render DPI for OCR fallback (default: `300`, clamped 72-600) |
 | `SMTP_HOST`        | No       | SMTP server host (e.g., `smtp.gmail.com`)      |
 | `SMTP_PORT`        | No       | SMTP server port (default: `587`)              |
 | `SMTP_USER`        | No       | SMTP username/email                            |
@@ -238,9 +244,9 @@ spendrax/
 |   |   +-- test_api_integration.py  # Auth, expenses, budgets, categories, reports, savings, insights, admin
 |   +-- parsers/                # Bank statement parsing module
 |   |   +-- __init__.py         # Module exports
-|   |   +-- csv_parser.py       # CSV statement parser
-|   |   +-- html_parser.py      # HTML statement parser
-|   |   +-- pdf_parser.py       # PDF parser (multi-page, GPay/PhonePe, traditional banks)
+|   |   +-- pdf_parser.py       # Validation-driven PDF parser with table/text/OCR fallback
+|   |   +-- ocr_parser.py       # Local PyMuPDF + Tesseract OCR support for scanned PDFs
+|   |   +-- validation.py       # Parser confidence scoring and transaction validation
 |   |   +-- utils.py            # Categorization keywords, duplicate/reversal detection
 |   +-- routes/
 |       +-- auth.py             # /api/auth (register, login, me, forgot/reset password)
@@ -324,10 +330,12 @@ All endpoints are prefixed with `/api`. Endpoints marked with 🔒 require authe
 | `POST`   | `/api/expenses`             | Create expense           |
 | `PUT`    | `/api/expenses/{id}`        | Update expense           |
 | `DELETE` | `/api/expenses/{id}`        | Delete expense           |
-| `POST`   | `/api/expenses/upload`      | Upload bank statement (CSV/PDF/HTML). Query params: `use_ai=false`, `password=<pdf_password>` |
+| `POST`   | `/api/expenses/upload`      | Upload PDF bank statement. Query params: `use_ai=false`, `password=<pdf_password>` |
 | `POST`   | `/api/expenses/bulk`        | Bulk create expenses from uploaded statement |
 | `GET`    | `/api/expenses/payee-mappings` | Get saved payee-to-category mappings |
 | `POST`   | `/api/expenses/apply-mappings` | Apply saved mappings to transactions |
+
+Statement upload responses include parser metadata for PDF imports: `parse_confidence`, `parse_score`, and `parse_issues`.
 
 ### Categories 🔒
 
@@ -396,6 +404,7 @@ If you prefer running locally without Docker:
 - Node.js 20+
 - Yarn
 - MongoDB 7 (running on localhost:27017)
+- Tesseract OCR (optional, only needed for scanned PDF parsing outside Docker)
 
 ### Backend
 ```bash

@@ -1027,6 +1027,6 @@ def parse_pdf_local(file_content: bytes, password: Optional[str] = None) -> List
         raise ValueError(f"Failed to parse PDF: {str(e)}")
 
     if not transactions:
-        raise ValueError("No transactions found in PDF. Try CSV or HTML format if available.")
+        raise ValueError("No transactions found in PDF. Try another PDF statement or enable AI extraction.")
 
     return transactions

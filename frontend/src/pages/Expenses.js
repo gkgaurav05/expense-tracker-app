@@ -187,7 +187,7 @@ export default function Expenses() {
           </div>
           <h3 className="text-xl font-semibold text-white mb-2 font-['General_Sans']">No expenses yet</h3>
           <p className="text-[#A1A1AA] mb-8 max-w-md mx-auto">
-            Start tracking your spending by importing a bank statement or adding expenses manually.
+            Start tracking your spending by importing a PDF bank statement or adding expenses manually.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
@@ -212,7 +212,7 @@ export default function Expenses() {
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
                 Supports
               </span>
-              GPay • PhonePe • Axis • HDFC • SBI • CSV • PDF • HTML
+              PDF statements from GPay • PhonePe • Axis • HDFC • SBI
             </p>
           </div>
         </motion.div>

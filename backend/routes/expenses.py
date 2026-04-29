@@ -26,8 +26,6 @@ from expense_logic import ensure_not_future_date
 
 # Import parsers
 from parsers import (
-    parse_bank_csv,
-    parse_html_statement,
     parse_pdf_local,
     detect_reversal_pairs,
     extract_payee_id,
@@ -313,57 +311,47 @@ async def upload_statement(
     password: Optional[str] = Query(None, description="Password for encrypted PDF files"),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload bank/UPI statement (CSV, PDF, or HTML) and parse transactions."""
+    """Upload a PDF bank/UPI statement and parse transactions."""
     filename = file.filename.lower()
-    is_csv = filename.endswith('.csv')
     is_pdf = filename.endswith('.pdf')
-    is_html = filename.endswith('.html') or filename.endswith('.htm')
 
-    if not is_csv and not is_pdf and not is_html:
-        raise HTTPException(400, "Only CSV, PDF, and HTML files are supported")
+    if not is_pdf:
+        raise HTTPException(400, "Only PDF bank statement files are supported")
 
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:  # 10MB limit
         raise HTTPException(400, "File too large (max 10MB)")
 
     used_ai = False
-    file_type = "csv"
+    file_type = "pdf"
 
     try:
-        if is_csv:
-            transactions = parse_bank_csv(content)
-            file_type = "csv"
-        elif is_html:
-            transactions = parse_html_statement(content)
-            file_type = "html"
+        # PDF - try local parsing first
+        if use_ai:
+            # User explicitly requested AI
+            transactions = await parse_pdf_with_ai(content, current_user["id"])
+            used_ai = True
         else:
-            # PDF - try local parsing first
-            file_type = "pdf"
-            if use_ai:
-                # User explicitly requested AI
-                transactions = await parse_pdf_with_ai(content, current_user["id"])
-                used_ai = True
-            else:
-                # Try local parsing first
-                try:
-                    transactions = parse_pdf_local(content, password=password)
-                except ValueError as e:
-                    error_msg = str(e)
-                    # Check if PDF is password-protected
-                    if 'PDF_PASSWORD_REQUIRED' in error_msg:
-                        raise ValueError(
-                            "This PDF is password-protected. Please provide the password to decrypt it."
-                        )
-                    # Local parsing failed, but don't auto-fallback to AI
+            # Try local parsing first
+            try:
+                transactions = parse_pdf_local(content, password=password)
+            except ValueError as e:
+                error_msg = str(e)
+                # Check if PDF is password-protected
+                if 'PDF_PASSWORD_REQUIRED' in error_msg:
                     raise ValueError(
-                        "Could not extract transactions from PDF using local parsing. "
-                        "The PDF format may not be supported. Try enabling AI extraction for better results."
+                        "This PDF is password-protected. Please provide the password to decrypt it."
                     )
+                # Local parsing failed, but don't auto-fallback to AI
+                raise ValueError(
+                    "Could not extract transactions from PDF using local parsing. "
+                    "The PDF format may not be supported. Try enabling AI extraction for better results."
+                )
     except ValueError as e:
         raise HTTPException(400, str(e))
 
     if not transactions:
-        raise HTTPException(400, "No valid transactions found in file")
+        raise HTTPException(400, "No valid transactions found in PDF")
 
     parse_source = f"{file_type}_{'ai' if used_ai else 'local'}"
     parse_validation = validate_transactions(transactions, source=parse_source)

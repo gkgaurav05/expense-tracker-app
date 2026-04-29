@@ -533,7 +533,7 @@ def test_categories_crud_scoping_duplicates_and_default_protection(client):
     assert own_delete.json() == {"deleted": True}
 
 
-def test_statement_upload_csv_preview_detects_duplicates_and_income(client):
+def test_statement_upload_pdf_preview_detects_duplicates_and_income(client):
     now = FIXED_UTC_NOW
     today = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -550,19 +550,37 @@ def test_statement_upload_csv_preview_detects_duplicates_and_income(client):
         date=yesterday,
     )
 
-    csv_body = f"date,description,amount\n{yesterday},Lunch,250\n{today},Salary credit,2000\n".encode()
-    response = client.post(
-        "/api/expenses/upload",
-        headers=headers,
-        files={"file": ("statement.csv", csv_body, "text/csv")},
-    )
+    with patch(
+        "routes.expenses.parse_pdf_local",
+        return_value=[
+            {
+                "date": yesterday,
+                "amount": 250,
+                "description": "Lunch",
+                "category": "Food & Dining",
+                "type": "expense",
+            },
+            {
+                "date": today,
+                "amount": 2000,
+                "description": "Salary credit",
+                "category": "Income",
+                "type": "income",
+            },
+        ],
+    ):
+        response = client.post(
+            "/api/expenses/upload",
+            headers=headers,
+            files={"file": ("statement.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        )
 
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["count"] == 2
     assert payload["duplicate_count"] == 1
     assert payload["used_ai"] is False
-    assert payload["file_type"] == "csv"
+    assert payload["file_type"] == "pdf"
     assert len(payload["transactions"]) == 2
     duplicate = next(txn for txn in payload["transactions"] if txn["description"] == "Lunch")
     income = next(txn for txn in payload["transactions"] if txn["description"] == "Salary credit")
@@ -626,35 +644,25 @@ def test_statement_upload_pdf_branches_cover_ai_and_password_required(client):
     )
 
 
-def test_statement_upload_html_fixture_parses_expense_and_income(client):
+def test_statement_upload_rejects_csv_and_html_files(client):
     user = register_user(client, email="alice@example.com")
     headers = auth_headers(user["access_token"])
 
-    html_body = b"""
-    <html>
-      <body>
-        <table>
-          <tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th></tr>
-          <tr><td>15/04/2026</td><td>Lunch at Cafe</td><td>250</td><td></td></tr>
-          <tr><td>16/04/2026</td><td>Salary received</td><td></td><td>2000</td></tr>
-        </table>
-      </body>
-    </html>
-    """
-
-    response = client.post(
+    csv_response = client.post(
         "/api/expenses/upload",
         headers=headers,
-        files={"file": ("statement.html", html_body, "text/html")},
+        files={"file": ("statement.csv", b"date,amount\n2026-04-15,250\n", "text/csv")},
+    )
+    html_response = client.post(
+        "/api/expenses/upload",
+        headers=headers,
+        files={"file": ("statement.html", b"<html></html>", "text/html")},
     )
 
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["count"] == 2
-    assert payload["file_type"] == "html"
-    assert payload["used_ai"] is False
-    assert {transaction["type"] for transaction in payload["transactions"]} == {"expense", "income"}
-    assert any(transaction["category"] == "Income" for transaction in payload["transactions"])
+    assert csv_response.status_code == 400
+    assert csv_response.json()["detail"] == "Only PDF bank statement files are supported"
+    assert html_response.status_code == 400
+    assert html_response.json()["detail"] == "Only PDF bank statement files are supported"
 
 
 def test_statement_apply_mappings_reuses_learned_payee_categories(client):

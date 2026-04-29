@@ -2,13 +2,9 @@
 Parsers module for bank statement parsing.
 
 This module provides parsers for various bank statement formats:
-- CSV: Standard bank CSV exports
-- HTML: GPay, PhonePe HTML exports
-- PDF: Bank statement PDFs (with GPay support)
+- PDF: Bank statement PDFs (with GPay/PhonePe support)
 """
 
-from .csv_parser import parse_bank_csv
-from .html_parser import parse_html_statement
 from .pdf_parser import parse_pdf_local, parse_gpay_pdf, extract_transactions_from_text
 from .utils import (
     CREDIT_PATTERNS,
@@ -24,8 +20,6 @@ from .validation import validate_transactions, select_best_parse_attempt
 
 __all__ = [
     # Parsers
-    'parse_bank_csv',
-    'parse_html_statement',
     'parse_pdf_local',
     'parse_gpay_pdf',
     'extract_transactions_from_text',
