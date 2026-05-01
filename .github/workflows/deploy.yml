@@ -432,6 +432,8 @@ jobs:
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Check Terraform backend and ECS outputs
         id: check
@@ -555,6 +557,8 @@ jobs:
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2

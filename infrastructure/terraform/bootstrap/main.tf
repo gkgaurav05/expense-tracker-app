@@ -99,6 +99,6 @@ output "backend_config_example" {
     bucket         = "${aws_s3_bucket.terraform_state.id}"
     region         = "${var.aws_region}"
     encrypt        = true
-    dynamodb_table = "${aws_dynamodb_table.terraform_locks.name}"
+    use_lockfile   = true
   EOT
 }
