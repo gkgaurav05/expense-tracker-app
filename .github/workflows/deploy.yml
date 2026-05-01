@@ -530,13 +530,21 @@ jobs:
       (needs.backend-regressions.result == 'success' || needs.backend-regressions.result == 'skipped') &&
       (needs.backend-integration.result == 'success' || needs.backend-integration.result == 'skipped') &&
       (needs.docker-build-check.result == 'success' || needs.docker-build-check.result == 'skipped') &&
-      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') &&
-      needs.check-infrastructure.outputs.available == 'true'
+      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment == 'prod' && 'production' || github.event_name != 'workflow_dispatch' && github.ref_name == 'main' && 'production' || github.event_name == 'workflow_dispatch' && github.event.inputs.target_environment || github.ref_name == 'test' && 'test' || github.ref_name == 'staging' && 'staging' || 'production' }}
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Note infrastructure precheck result
+        if: needs.check-infrastructure.outputs.available != 'true'
+        run: |
+          echo "::warning::Infrastructure precheck did not confirm ECS availability. Continuing because deploy was requested and required checks passed. Deployment will fail with a clear error if Terraform outputs or ECS resources are missing."
+          echo "## Infrastructure precheck warning" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The deployment job is continuing because the required checks passed and deployment was requested." >> "$GITHUB_STEP_SUMMARY"
+          echo "If Terraform outputs or ECS resources are missing, this job will fail during deployment output loading or ECS rollout." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
