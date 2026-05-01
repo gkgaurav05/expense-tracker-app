@@ -333,8 +333,11 @@ def extract_payee_id(description: str) -> Optional[str]:
 
 def generate_transaction_hash(date: str, amount: float, description: str) -> str:
     """Generate a unique hash for a transaction based on date, amount, and description."""
-    # Normalize: lowercase description, round amount to 2 decimals
+    # Normalize: lowercase description, and make 250, 250.0, and "250.00" hash identically.
     normalized_desc = (description or "").lower().strip()
-    normalized_amount = round(amount, 2)
+    try:
+        normalized_amount = f"{float(str(amount).replace(',', '')):.2f}"
+    except (TypeError, ValueError):
+        normalized_amount = "0.00"
     hash_input = f"{date}|{normalized_amount}|{normalized_desc}"
     return hashlib.md5(hash_input.encode()).hexdigest()

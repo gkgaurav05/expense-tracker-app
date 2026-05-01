@@ -8,6 +8,7 @@ from expense_logic import (
     filter_spending_transactions,
     sum_transaction_amounts,
 )
+from parsers import generate_transaction_hash
 
 
 class RegressionTests(unittest.TestCase):
@@ -78,3 +79,15 @@ class RegressionTests(unittest.TestCase):
         today = datetime.now(timezone.utc)
         ensure_not_future_date(today.strftime("%Y-%m-%d"), today=today)
         ensure_not_future_date((today - timedelta(days=1)).strftime("%Y-%m-%d"), today=today)
+
+    def test_transaction_hash_normalizes_amount_representation(self):
+        base_hash = generate_transaction_hash("2026-04-15", 250, "Lunch")
+
+        self.assertEqual(
+            base_hash,
+            generate_transaction_hash("2026-04-15", 250.0, " lunch "),
+        )
+        self.assertEqual(
+            base_hash,
+            generate_transaction_hash("2026-04-15", "250.00", "Lunch"),
+        )
