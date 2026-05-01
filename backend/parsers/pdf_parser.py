@@ -522,6 +522,8 @@ def _parse_amount_token(token: str) -> Optional[float]:
     has_comma_fmt = bool(re.search(r'\d,\d', raw))
 
     cleaned = re.sub(r'(?i)(₹|rs\.?|inr)', '', raw)
+    cleaned = re.sub(r'(?i)^\s*r\s*(?=\d)', '', cleaned)
+    cleaned = re.sub(r'(?i)\b(cr|dr)\b', '', cleaned)
     cleaned = cleaned.replace(",", "").strip()
     if not cleaned:
         return None
@@ -547,6 +549,267 @@ def _clean_text_description(text: str) -> str:
     text = re.sub(r'\b(dr|cr|debit|credit|withdrawal|deposit|balance|closing|opening)\b', ' ', text, flags=re.IGNORECASE)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()[:200]
+
+
+def _build_parsed_transaction(
+    parsed_date: str,
+    amount: float,
+    description: str,
+    txn_type: str = "expense",
+    balance: Optional[float] = None,
+    infer_credit_from_description: bool = True,
+) -> Optional[dict]:
+    description = re.sub(r'\s+', ' ', description or '').strip()
+    description = description[:200]
+    if not parsed_date or not amount or amount <= 0 or not description:
+        return None
+
+    likely_credit = (infer_credit_from_description and is_likely_credit(description)) or txn_type == 'income'
+    if likely_credit:
+        txn_type = 'income'
+
+    category = 'Income' if txn_type == 'income' else (categorize_by_keywords(description) or 'Uncategorized')
+    return {
+        'date': parsed_date,
+        'amount': round(amount, 2),
+        'description': description,
+        'category': category,
+        'type': txn_type,
+        'likely_credit': likely_credit,
+        'balance': balance,
+    }
+
+
+def _parse_credit_card_table_rows(pdf) -> List[dict]:
+    """Parse credit card tables where table headers are incomplete.
+
+    ICICI-style credit card PDFs often extract transaction tables as:
+    [date, reference, details, reward points, currency, fx amount, amount]
+    but the final INR amount header is blank, so the generic header detector
+    skips the table. This parser uses row shape instead of relying on headers.
+    """
+    transactions = []
+
+    for page in pdf.pages[:20]:
+        for table in page.extract_tables() or []:
+            if not table:
+                continue
+
+            table_text = ' '.join(
+                str(cell or '').lower()
+                for row in table[:3]
+                for cell in (row or [])
+            )
+            looks_like_card_table = (
+                ('ref. number' in table_text or 'ref number' in table_text)
+                and ('transaction details' in table_text or 'transaction detail' in table_text)
+            )
+            if not looks_like_card_table:
+                continue
+
+            for row in table:
+                if not row or len(row) < 4:
+                    continue
+
+                date_text = str(row[0] or '').strip()
+                parsed_date = parse_date_flexible(date_text)
+                if not parsed_date:
+                    continue
+
+                non_empty_cells = [str(cell).strip() for cell in row if str(cell or '').strip()]
+                if len(non_empty_cells) < 3:
+                    continue
+
+                amount_cell = non_empty_cells[-1]
+                amount = _parse_amount_token(amount_cell)
+                if amount is None:
+                    continue
+
+                description = ''
+                if len(row) > 2 and row[2]:
+                    description = str(row[2]).replace('\n', ' ')
+                elif len(row) > 1:
+                    description = ' '.join(str(cell or '').replace('\n', ' ') for cell in row[1:-1])
+
+                txn_type = 'income' if re.search(r'\bcr\b', amount_cell, re.IGNORECASE) else 'expense'
+                txn = _build_parsed_transaction(
+                    parsed_date,
+                    amount,
+                    description,
+                    txn_type=txn_type,
+                    infer_credit_from_description=False,
+                )
+                if txn:
+                    transactions.append(txn)
+
+    return transactions
+
+
+def _is_credit_card_noise_line(line: str) -> bool:
+    lowered = line.lower()
+    if not lowered:
+        return True
+    noise_markers = [
+        'your transactions',
+        'transaction date',
+        'transactional details',
+        'transational details',
+        'fx transactions',
+        'amount(',
+        'statement summary',
+        'payment modes',
+        'message of the month',
+        'credit card statement',
+        'page ',
+    ]
+    if any(marker in lowered for marker in noise_markers):
+        return True
+    if re.fullmatch(r'[-–—\s]+', line):
+        return True
+    if re.search(r'amortization\s*-\s*<\d+/\d+>', lowered):
+        return True
+    if re.fullmatch(r'<\d+/\d+>', lowered):
+        return True
+    return False
+
+
+def _clean_credit_card_description_line(line: str) -> Optional[str]:
+    """Return useful merchant/fee text from a credit-card statement line."""
+    line = re.sub(r'\(cid:\d+\)', ' ', line)
+    line = re.sub(r'\s+', ' ', line).strip()
+    if not line:
+        return None
+
+    # Some IDFC statements interleave payment-mode instructions into the same
+    # column as transactions. When a real merchant/fee label is present, keep
+    # only the merchant-looking tail.
+    merchant_tail = re.search(r'([A-Z][A-Z0-9 .&/,()_-]{2,}\s+-\s+.+)$', line)
+    if merchant_tail:
+        return merchant_tail.group(1).strip()
+
+    lowered = line.lower()
+    payment_noise = [
+        'pay via',
+        'click here',
+        'to open/download',
+        'the new mobile app',
+        'pay anytime',
+        'card integrated',
+        'pay from',
+        'scan qr',
+        'bill desk',
+        'pay through',
+        'add idfc first bank',
+        'enter credit card',
+        'enter ifsc',
+        '<yourcreditcardnumber>',
+    ]
+    if any(marker in lowered for marker in payment_noise):
+        return None
+
+    if _is_credit_card_noise_line(line):
+        return None
+
+    return line
+
+
+def _extract_credit_card_transactions_from_page_texts(page_texts: List[str]) -> List[dict]:
+    """Parse readable credit-card statement text when no table is available.
+
+    IDFC-style statements extract as text with merchant/charge details on one
+    line and the transaction date + amount on the next line. The generic text
+    parser cannot safely infer those descriptions, so this parser keeps a small
+    pending-description buffer within the "YOUR TRANSACTIONS" section.
+    """
+    transactions = []
+    pending_description: List[str] = []
+    in_transactions = False
+
+    date_amount_only_re = re.compile(
+        r'^(?P<date>\d{1,2}/\d{1,2}/\d{4})\s+'
+        r'(?P<amount>(?:₹|rs\.?|inr|r)?\s*\d[\d,]*(?:\.\d{1,2})?)'
+        r'(?:\s*(?P<marker>CR|DR))?$',
+        re.IGNORECASE,
+    )
+    date_amount_tail_re = re.compile(
+        r'(?P<date>\d{1,2}/\d{1,2}/\d{4})\s+'
+        r'(?P<amount>(?:₹|rs\.?|inr|r)?\s*\d[\d,]*(?:\.\d{1,2})?)'
+        r'(?:\s*(?P<marker>CR|DR))?$',
+        re.IGNORECASE,
+    )
+    date_desc_amount_re = re.compile(
+        r'^(?P<date>\d{1,2}/\d{1,2}/\d{4})\s+'
+        r'(?P<description>.+?)\s+'
+        r'(?P<amount>(?:₹|rs\.?|inr|r)?\s*\d[\d,]*(?:\.\d{1,2})?)'
+        r'(?:\s*(?P<marker>CR|DR))?$',
+        re.IGNORECASE,
+    )
+
+    for text in page_texts:
+        for raw_line in (text or '').splitlines():
+            line = re.sub(r'\(cid:\d+\)', ' ', raw_line)
+            line = re.sub(r'\s+', ' ', line).strip()
+            if not line:
+                continue
+
+            lowered = line.lower()
+            if 'your transactions' in lowered:
+                in_transactions = True
+                pending_description = []
+                continue
+            if in_transactions and (
+                'special benefits' in lowered
+                or 'important information' in lowered
+                or 'statement summary' in lowered
+            ):
+                in_transactions = False
+                pending_description = []
+                continue
+            if not in_transactions:
+                continue
+            if _is_credit_card_noise_line(line):
+                continue
+
+            date_desc_match = date_desc_amount_re.match(line)
+            date_amount_match = date_amount_only_re.match(line)
+            if date_amount_match is None and pending_description:
+                date_amount_match = date_amount_tail_re.search(line)
+            match = date_desc_match or date_amount_match
+            if match:
+                parsed_date = parse_date_flexible(match.group('date'))
+                amount = _parse_amount_token(match.group('amount'))
+                if not parsed_date or amount is None:
+                    pending_description = []
+                    continue
+
+                if date_desc_match:
+                    description = match.group('description')
+                else:
+                    description = ' '.join(pending_description)
+
+                marker = (match.groupdict().get('marker') or '').upper()
+                txn_type = 'income' if marker == 'CR' else 'expense'
+                txn = _build_parsed_transaction(
+                    parsed_date,
+                    amount,
+                    description,
+                    txn_type=txn_type,
+                    infer_credit_from_description=False,
+                )
+                if txn:
+                    transactions.append(txn)
+                pending_description = []
+                continue
+
+            # Keep merchant/fee text for the next date+amount row. Ignore
+            # standalone numeric or address-like lines.
+            if not TEXT_DATE_PATTERN.search(line) and not re.fullmatch(r'[\d,.\s]+', line):
+                description_line = _clean_credit_card_description_line(line)
+                if description_line:
+                    pending_description.append(description_line)
+                    pending_description = pending_description[-3:]
+
+    return transactions
 
 
 def _extract_transactions_from_page_texts(page_texts: List[str]) -> List[dict]:
@@ -686,6 +949,14 @@ def parse_pdf_local(file_content: bytes, password: Optional[str] = None) -> List
                     multiline_attempt = _record_parse_attempt(attempts, "multiline_cells", multiline_txns)
                     if _should_accept_early(multiline_attempt):
                         return multiline_txns
+
+            # Credit card table PDFs sometimes lose the amount header, so parse
+            # row shape before falling back to the stricter generic table logic.
+            credit_card_table_txns = _parse_credit_card_table_rows(pdf)
+            if credit_card_table_txns:
+                credit_card_table_attempt = _record_parse_attempt(attempts, "credit_card_tables", credit_card_table_txns)
+                if _should_accept_early(credit_card_table_attempt):
+                    return credit_card_table_txns
 
             # Try to extract tables (for traditional bank statements)
             # Save column structure from first page with headers to reuse on continuation pages
@@ -962,6 +1233,14 @@ def parse_pdf_local(file_content: bytes, password: Optional[str] = None) -> List
 
             # If table parsing is empty or low-confidence, try text extraction with regex
             logger.info("Table parsing did not produce a confident result, trying text extraction")
+            page_texts = [page.extract_text() or '' for page in pdf.pages[:20]]
+            credit_card_text_transactions = _extract_credit_card_transactions_from_page_texts(page_texts)
+            if credit_card_text_transactions:
+                credit_card_text_attempt = _record_parse_attempt(attempts, "credit_card_text", credit_card_text_transactions)
+                if _should_accept_early(credit_card_text_attempt):
+                    logger.info(f"Total transactions extracted from PDF: {len(credit_card_text_transactions)}")
+                    return credit_card_text_transactions
+
             text_transactions = extract_transactions_from_text(pdf)
             if text_transactions:
                 text_attempt = _record_parse_attempt(attempts, "text", text_transactions)
