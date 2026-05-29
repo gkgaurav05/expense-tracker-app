@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from '@/lib/router';
-import { LayoutDashboard, Receipt, PiggyBank, LogOut, Shield } from 'lucide-react';
+import { LayoutDashboard, Receipt, PiggyBank, LogOut, Shield, Users2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/context/AuthContext';
 
@@ -7,6 +7,7 @@ const baseNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/expenses', icon: Receipt, label: 'Expenses' },
   { to: '/budgets', icon: PiggyBank, label: 'Budgets' },
+  { to: '/split', icon: Users2, label: 'Split' },
 ];
 
 const adminNavItem = { to: '/admin', icon: Shield, label: 'Admin' };

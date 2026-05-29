@@ -111,6 +111,8 @@ jest.mock('@/components/Sidebar', () => () => <div data-testid="sidebar">Sidebar
 jest.mock('@/pages/Dashboard', () => () => <div data-testid="page-dashboard">Dashboard Page</div>);
 jest.mock('@/pages/Expenses', () => () => <div data-testid="page-expenses">Expenses Page</div>);
 jest.mock('@/pages/Budgets', () => () => <div data-testid="page-budgets">Budgets Page</div>);
+jest.mock('@/pages/SplitGroups', () => () => <div data-testid="page-split-groups">Split Groups Page</div>);
+jest.mock('@/pages/SplitGroupDetail', () => () => <div data-testid="page-split-group-detail">Split Group Detail Page</div>);
 jest.mock('@/pages/Admin', () => () => <div data-testid="page-admin">Admin Page</div>);
 jest.mock('@/pages/Login', () => () => <div data-testid="page-login">Login Page</div>);
 jest.mock('@/pages/Register', () => () => <div data-testid="page-register">Register Page</div>);

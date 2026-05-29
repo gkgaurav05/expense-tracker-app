@@ -77,6 +77,23 @@ export const api = {
   // Admin
   getAdminStats: () => instance.get('/admin/stats'),
   getAdminActivity: () => instance.get('/admin/activity'),
+
+  // Split groups (Splitwise-style shared expenses)
+  listSplitGroups: () => instance.get('/split/groups'),
+  createSplitGroup: (data) => instance.post('/split/groups', data),
+  getSplitGroup: (groupId) => instance.get(`/split/groups/${groupId}`),
+  updateSplitGroup: (groupId, data) => instance.patch(`/split/groups/${groupId}`, data),
+  deleteSplitGroup: (groupId) => instance.delete(`/split/groups/${groupId}`),
+  addSplitGroupMember: (groupId, email) => instance.post(`/split/groups/${groupId}/members`, { email }),
+  removeSplitGroupMember: (groupId, userId) => instance.delete(`/split/groups/${groupId}/members/${userId}`),
+  listSplitExpenses: (groupId) => instance.get(`/split/groups/${groupId}/expenses`),
+  createSplitExpense: (groupId, data) => instance.post(`/split/groups/${groupId}/expenses`, data),
+  deleteSplitExpense: (groupId, expenseId) => instance.delete(`/split/groups/${groupId}/expenses/${expenseId}`),
+  getSplitBalances: (groupId) => instance.get(`/split/groups/${groupId}/balances`),
+  getSettlementSuggestions: (groupId) => instance.get(`/split/groups/${groupId}/settlement-suggestions`),
+  listSplitSettlements: (groupId) => instance.get(`/split/groups/${groupId}/settlements`),
+  createSplitSettlement: (groupId, data) => instance.post(`/split/groups/${groupId}/settlements`, data),
+  deleteSplitSettlement: (groupId, settlementId) => instance.delete(`/split/groups/${groupId}/settlements/${settlementId}`),
 };
 
 export const formatINR = (value) =>
