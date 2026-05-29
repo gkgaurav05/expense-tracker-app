@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -7,6 +7,7 @@ import { CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { api, formatINR } from '@/lib/api';
 import { toast } from 'sonner';
+import { useSubmitOnCmdEnter } from '@/lib/useSubmitOnCmdEnter';
 
 // Mirrors the backend rule in split_logic.calculate_equal_split:
 // payer absorbs the leftover paisa.
@@ -33,6 +34,8 @@ function previewEqualSplit(amountRupees, participantUserIds, payerId) {
 }
 
 export default function AddSplitExpenseModal({ open, onOpenChange, group, categories, onSuccess }) {
+  const formRef = useRef(null);
+  useSubmitOnCmdEnter(formRef, open);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Food & Dining');
@@ -122,7 +125,7 @@ export default function AddSplitExpenseModal({ open, onOpenChange, group, catego
             Add Split Expense
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 mt-4">
           {/* Amount */}
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">Amount</label>

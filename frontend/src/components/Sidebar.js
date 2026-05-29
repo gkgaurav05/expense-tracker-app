@@ -89,33 +89,35 @@ export default function Sidebar() {
         </Tooltip>
       </aside>
 
-      {/* Mobile bottom bar */}
+      {/* Mobile bottom bar — items + logout share width equally,
+          labels collapse at narrower widths to keep touch targets honest. */}
       <nav
         data-testid="mobile-nav"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex justify-around items-center h-16 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-white/[0.08]"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch h-16 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-white/[0.08]"
       >
-        {navItems.slice(0, 5).map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/'}
             data-testid={`mobile-nav-${item.label.toLowerCase()}`}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 text-[10px] uppercase tracking-wider font-medium transition-colors ${
+              `flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 text-[10px] uppercase tracking-wider font-medium transition-colors ${
                 isActive ? 'text-[#FDE047]' : 'text-[#A1A1AA]'
               }`
             }
           >
             <item.icon size={20} strokeWidth={2.2} />
-            <span>{item.label}</span>
+            <span className="hidden sm:inline truncate max-w-full px-1">{item.label}</span>
           </NavLink>
         ))}
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center gap-0.5 text-[10px] uppercase tracking-wider font-medium text-[#A1A1AA]"
+          aria-label="Logout"
+          className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 text-[10px] uppercase tracking-wider font-medium text-[#A1A1AA]"
         >
           <LogOut size={20} strokeWidth={2.2} />
-          <span>Logout</span>
+          <span className="hidden sm:inline truncate max-w-full px-1">Logout</span>
         </button>
       </nav>
     </TooltipProvider>

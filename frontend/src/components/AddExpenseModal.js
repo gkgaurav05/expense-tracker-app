@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -7,8 +7,11 @@ import { CalendarIcon, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { useSubmitOnCmdEnter } from '@/lib/useSubmitOnCmdEnter';
 
 export default function AddExpenseModal({ open, onOpenChange, categories, onSuccess, expense }) {
+  const formRef = useRef(null);
+  useSubmitOnCmdEnter(formRef, open);
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -88,7 +91,7 @@ export default function AddExpenseModal({ open, onOpenChange, categories, onSucc
             {expense ? 'Edit Expense' : 'Add Expense'}
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 mt-4">
           {/* Amount */}
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">Amount</label>

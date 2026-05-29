@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, Wallet, PiggyBank, ArrowRight, ChevronLeft, ChevronRight, CalendarDays, Hash, Download, Share2, Sparkles, ChevronDown, Loader2 } from 'lucide-react';
+import { TrendingUp, Wallet, PiggyBank, ArrowRight, ChevronLeft, ChevronRight, CalendarDays, Hash, Download, Share2, Sparkles, ChevronDown, Loader2, Users2 } from 'lucide-react';
 import { api, formatINR } from '@/lib/api';
 import { getDashboardWeekRange } from '@/lib/dashboardPeriod';
 import { useNavigate } from '@/lib/navigation';
+import { Link } from '@/lib/router';
 import { DailySpendingChart, CategoryPieChart } from '@/components/SpendingCharts';
 import BudgetAlerts from '@/components/BudgetAlerts';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -415,21 +416,43 @@ export default function Dashboard() {
         </div>
         {s.recent_expenses?.length > 0 ? (
           <div className="space-y-3">
-            {s.recent_expenses.map((exp) => (
-              <div key={exp.id} data-testid={`recent-expense-${exp.id}`} className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex flex-col items-center justify-center leading-none">
-                    <span className="text-xs font-bold text-white">{exp.date?.slice(8)}</span>
-                    <span className="text-[10px] text-[#A1A1AA] uppercase">{new Date(exp.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</span>
+            {s.recent_expenses.map((exp) => {
+              const isFromGroup = exp.source === 'split_group' && exp.is_system_generated;
+              return (
+                <div key={exp.id} data-testid={`recent-expense-${exp.id}`} className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex flex-col items-center justify-center leading-none flex-shrink-0">
+                      <span className="text-xs font-bold text-white">{exp.date?.slice(8)}</span>
+                      <span className="text-[10px] text-[#A1A1AA] uppercase">{new Date(exp.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-white truncate">{exp.category}</p>
+                        {isFromGroup && (
+                          exp.group_id ? (
+                            <Link
+                              to={`/split/${exp.group_id}`}
+                              className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#FDE047]/15 text-[#FDE047] font-semibold hover:bg-[#FDE047]/25 transition-colors flex-shrink-0"
+                              title="From group split"
+                            >
+                              <Users2 size={9} strokeWidth={2.5} />
+                              Group
+                            </Link>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#FDE047]/15 text-[#FDE047] font-semibold flex-shrink-0">
+                              <Users2 size={9} strokeWidth={2.5} />
+                              Group
+                            </span>
+                          )
+                        )}
+                      </div>
+                      <p className="text-xs text-[#A1A1AA] truncate">{exp.description || '-'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">{exp.category}</p>
-                    <p className="text-xs text-[#A1A1AA]">{exp.description || '-'}</p>
-                  </div>
+                  <p className="text-sm font-bold text-white flex-shrink-0">{formatINR(exp.amount)}</p>
                 </div>
-                <p className="text-sm font-bold text-white">{formatINR(exp.amount)}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-[#A1A1AA] text-sm py-8 text-center">

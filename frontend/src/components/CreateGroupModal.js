@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { useSubmitOnCmdEnter } from '@/lib/useSubmitOnCmdEnter';
 
 export default function CreateGroupModal({ open, onOpenChange, onSuccess }) {
+  const formRef = useRef(null);
+  useSubmitOnCmdEnter(formRef, open);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [emailInput, setEmailInput] = useState('');
@@ -73,7 +76,7 @@ export default function CreateGroupModal({ open, onOpenChange, onSuccess }) {
             Create Group
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 mt-4">
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">Name</label>
             <input

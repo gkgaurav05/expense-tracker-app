@@ -465,6 +465,7 @@ function SettlementsTab({ settlements, memberById, userId, onDelete }) {
 }
 
 function MembersTab({ members, createdBy, currentUserId, isAdmin, onAdd, onRemove }) {
+  const isSolo = members.length === 1;
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -474,6 +475,7 @@ function MembersTab({ members, createdBy, currentUserId, isAdmin, onAdd, onRemov
         {isAdmin && (
           <button
             onClick={onAdd}
+            data-testid="members-tab-add-btn"
             className="rounded-full bg-white/5 border border-white/10 text-white px-4 h-9 hover:bg-white/10 transition-all text-xs uppercase tracking-wide font-semibold flex items-center gap-2"
           >
             <UserPlus size={14} />
@@ -481,6 +483,26 @@ function MembersTab({ members, createdBy, currentUserId, isAdmin, onAdd, onRemov
           </button>
         )}
       </div>
+      {isSolo && isAdmin && (
+        <div className="glass-card-sm rounded-2xl p-5 border border-dashed border-[#FDE047]/30 bg-[#FDE047]/[0.04] flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#FDE047]/15 flex items-center justify-center flex-shrink-0">
+            <UserPlus size={16} className="text-[#FDE047]" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">It's just you in here.</p>
+            <p className="text-xs text-[#A1A1AA] mt-0.5">
+              Add at least one more registered Spendrax user to start splitting expenses.
+            </p>
+            <button
+              onClick={onAdd}
+              className="mt-3 rounded-full bg-[#FDE047] text-[#0A0A0A] px-4 h-8 text-xs uppercase tracking-wide font-bold hover:bg-[#FDE047]/90 transition-all inline-flex items-center gap-1.5"
+            >
+              <UserPlus size={12} strokeWidth={2.5} />
+              Add member
+            </button>
+          </div>
+        </div>
+      )}
       <div className="glass-card rounded-3xl divide-y divide-white/[0.06]">
         {members.map((m) => {
           const isMe = m.user_id === currentUserId;

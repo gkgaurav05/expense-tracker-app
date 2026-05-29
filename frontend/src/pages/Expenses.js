@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Trash2, Receipt, Filter, Pencil, Download, ChevronLeft, ChevronRight, CalendarDays, Upload } from 'lucide-react';
+import { Plus, Trash2, Receipt, Filter, Pencil, Download, ChevronLeft, ChevronRight, CalendarDays, Upload, Users2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Link } from '@/lib/router';
 import { api, formatINR } from '@/lib/api';
 import { buildExpenseExportParams } from '@/lib/expenseExport';
 import { toast } from 'sonner';
@@ -218,47 +219,85 @@ export default function Expenses() {
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }} className="space-y-3" data-testid="expense-list">
-          {expenses.map((exp, i) => (
-            <motion.div
-              key={exp.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...spring, delay: i * 0.03 }}
-              data-testid={`expense-item-${exp.id}`}
-              className="glass-card-sm flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex flex-col items-center justify-center leading-none">
-                  <span className="text-xs font-bold text-white">{exp.date?.slice(8)}</span>
-                  <span className="text-[10px] text-[#A1A1AA] uppercase">{new Date(exp.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: catColorMap[exp.category] || '#FDE047' }} />
-                  <div>
-                    <p className="text-sm font-semibold text-white">{exp.category}</p>
-                    <p className="text-xs text-[#A1A1AA]">{exp.description || '-'}</p>
+          {expenses.map((exp, i) => {
+            const isFromGroup = exp.source === 'split_group' && exp.is_system_generated;
+            return (
+              <motion.div
+                key={exp.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ ...spring, delay: i * 0.03 }}
+                data-testid={`expense-item-${exp.id}`}
+                className="glass-card-sm flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex flex-col items-center justify-center leading-none flex-shrink-0">
+                    <span className="text-xs font-bold text-white">{exp.date?.slice(8)}</span>
+                    <span className="text-[10px] text-[#A1A1AA] uppercase">{new Date(exp.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</span>
+                  </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: catColorMap[exp.category] || '#FDE047' }} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-white truncate">{exp.category}</p>
+                        {isFromGroup && (
+                          <TooltipProvider delayDuration={150}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                {exp.group_id ? (
+                                  <Link
+                                    to={`/split/${exp.group_id}`}
+                                    data-testid={`expense-group-badge-${exp.id}`}
+                                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FDE047]/15 text-[#FDE047] font-semibold hover:bg-[#FDE047]/25 transition-colors"
+                                  >
+                                    <Users2 size={10} strokeWidth={2.5} />
+                                    Group
+                                  </Link>
+                                ) : (
+                                  <span
+                                    data-testid={`expense-group-badge-${exp.id}`}
+                                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FDE047]/15 text-[#FDE047] font-semibold"
+                                  >
+                                    <Users2 size={10} strokeWidth={2.5} />
+                                    Group
+                                  </span>
+                                )}
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-[#171717] border-white/10 text-white max-w-[220px] text-xs">
+                                Your share of a group expense. Manage it from the originating group.
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#A1A1AA] truncate">{exp.description || '-'}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <p className="text-base font-bold text-white">{formatINR(exp.amount)}</p>
-                <button
-                  data-testid={`edit-expense-${exp.id}`}
-                  onClick={() => handleEdit(exp)}
-                  className="opacity-0 group-hover:opacity-100 w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  data-testid={`delete-expense-${exp.id}`}
-                  onClick={() => handleDelete(exp.id)}
-                  className="opacity-0 group-hover:opacity-100 w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </motion.div>
-          ))}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <p className="text-base font-bold text-white">{formatINR(exp.amount)}</p>
+                  {!isFromGroup && (
+                    <>
+                      <button
+                        data-testid={`edit-expense-${exp.id}`}
+                        onClick={() => handleEdit(exp)}
+                        className="opacity-0 group-hover:opacity-100 w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#A1A1AA] hover:bg-white/[0.1] hover:text-white transition-all"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        data-testid={`delete-expense-${exp.id}`}
+                        onClick={() => handleDelete(exp.id)}
+                        className="opacity-0 group-hover:opacity-100 w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
         </motion.div>
       )}
 

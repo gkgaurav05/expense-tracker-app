@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -7,8 +7,11 @@ import { CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { useSubmitOnCmdEnter } from '@/lib/useSubmitOnCmdEnter';
 
 export default function SettleUpModal({ open, onOpenChange, group, defaults, onSuccess }) {
+  const formRef = useRef(null);
+  useSubmitOnCmdEnter(formRef, open);
   const [fromUser, setFromUser] = useState('');
   const [toUser, setToUser] = useState('');
   const [amount, setAmount] = useState('');
@@ -75,7 +78,7 @@ export default function SettleUpModal({ open, onOpenChange, group, defaults, onS
             Settle Up
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 mt-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <label className="text-xs uppercase tracking-[0.2em] font-semibold text-[#A1A1AA]">From</label>
