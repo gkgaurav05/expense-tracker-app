@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import uuid
 from database import db, client
-from routes import auth, categories, expenses, budgets, dashboard, alerts, reports, insights, savings, admin
+from routes import auth, categories, expenses, budgets, dashboard, alerts, reports, insights, savings, admin, split_groups
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -112,6 +112,7 @@ api_router.include_router(reports.router)
 api_router.include_router(insights.router)
 api_router.include_router(savings.router)
 api_router.include_router(admin.router)
+api_router.include_router(split_groups.router)
 
 @api_router.get("/")
 async def root():

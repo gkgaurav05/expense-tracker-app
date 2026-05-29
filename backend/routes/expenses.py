@@ -276,12 +276,34 @@ async def get_expenses(
     return expenses
 
 
+def _ensure_personal_expense_writable(expense: dict) -> None:
+    """Reject writes/deletes on system-generated mirrored split-group expenses.
+
+    These records are owned by the split-group module — editing or deleting
+    them via the personal expense API would silently break group balances.
+    Manage them through /api/split/... routes instead.
+    """
+    if expense.get("source") == "split_group" and expense.get("is_system_generated"):
+        raise HTTPException(
+            400,
+            "This expense was created from a group split and is read-only here. "
+            "Manage it from the originating group.",
+        )
+
+
 @router.put("/expenses/{expense_id}")
 async def update_expense(expense_id: str, data: ExpenseCreate, current_user: dict = Depends(get_current_user)):
     try:
         ensure_not_future_date(data.date)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    existing = await db.expenses.find_one(
+        {"id": expense_id, "user_id": current_user["id"]}, {"_id": 0}
+    )
+    if not existing:
+        raise HTTPException(404, "Expense not found")
+    _ensure_personal_expense_writable(existing)
+
     result = await db.expenses.update_one(
         {"id": expense_id, "user_id": current_user["id"]},
         {"$set": {"amount": data.amount, "category": data.category, "description": data.description, "date": data.date}}
@@ -294,6 +316,13 @@ async def update_expense(expense_id: str, data: ExpenseCreate, current_user: dic
 
 @router.delete("/expenses/{expense_id}")
 async def delete_expense(expense_id: str, current_user: dict = Depends(get_current_user)):
+    existing = await db.expenses.find_one(
+        {"id": expense_id, "user_id": current_user["id"]}, {"_id": 0}
+    )
+    if not existing:
+        raise HTTPException(404, "Expense not found")
+    _ensure_personal_expense_writable(existing)
+
     result = await db.expenses.delete_one({"id": expense_id, "user_id": current_user["id"]})
     if result.deleted_count == 0:
         raise HTTPException(404, "Expense not found")
