@@ -8,6 +8,7 @@ jest.mock('framer-motion', () => require('../test/moduleMocks').motionModule);
 jest.mock('sonner', () => require('../test/moduleMocks').toastModule);
 jest.mock('@/lib/api', () => require('../test/moduleMocks').apiModule);
 jest.mock('@/lib/navigation', () => require('../test/moduleMocks').routerModule);
+jest.mock('@/lib/router', () => require('../test/moduleMocks').routerModule);
 jest.mock('@/components/ui/tabs', () => require('../test/moduleMocks').tabsModule);
 jest.mock('@/components/ui/tooltip', () => require('../test/moduleMocks').tooltipModule);
 jest.mock('@/components/SpendingCharts', () => require('../test/moduleMocks').spendingChartsModule);
