@@ -585,6 +585,34 @@ jobs:
           DOCUMENTDB_USERNAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw documentdb_username)
           DATABASE_NAME=$(terraform -chdir="${TF_WORKING_DIR}" output -raw database_name)
 
+          REQUIRED_OUTPUTS=(
+            APP_URL
+            ECS_CLUSTER_NAME
+            FRONTEND_SERVICE_NAME
+            BACKEND_SERVICE_NAME
+            FRONTEND_TASK_DEFINITION_ARN
+            BACKEND_TASK_DEFINITION_ARN
+            FRONTEND_ECR_REPOSITORY_URL
+            BACKEND_ECR_REPOSITORY_URL
+            BACKEND_RUNTIME_SECRET_ARN
+            DOCUMENTDB_ENDPOINT
+            DOCUMENTDB_USERNAME
+            DATABASE_NAME
+          )
+          MISSING_OUTPUTS=()
+
+          for OUTPUT_NAME in "${REQUIRED_OUTPUTS[@]}"; do
+            if [ -z "${!OUTPUT_NAME}" ]; then
+              MISSING_OUTPUTS+=("${OUTPUT_NAME}")
+            fi
+          done
+
+          if [ "${#MISSING_OUTPUTS[@]}" -ne 0 ]; then
+            echo "::error::Terraform state for ${TERRAFORM_ENV} is missing required ECS outputs: ${MISSING_OUTPUTS[*]}"
+            echo "Run the Terraform Apply workflow with environment=${TERRAFORM_ENV} and action=apply, then rerun this deployment."
+            exit 1
+          fi
+
           echo "APP_URL=${APP_URL}" >> "$GITHUB_ENV"
           echo "ECS_CLUSTER_NAME=${ECS_CLUSTER_NAME}" >> "$GITHUB_ENV"
           echo "FRONTEND_SERVICE_NAME=${FRONTEND_SERVICE_NAME}" >> "$GITHUB_ENV"
